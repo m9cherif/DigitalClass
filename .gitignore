@@ -1,0 +1,6 @@
+node_modules/
+data/*.json
+public/uploads/*
+!public/uploads/.gitkeep
+.env
+.npm-cache/
