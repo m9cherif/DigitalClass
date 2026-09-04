@@ -1,13 +1,14 @@
 /**
- * Socket.IO layer: live quiz parties, course chat rooms and push notifications.
+ * Socket.IO layer: live quiz parties, live A/V rooms, course chat and presence.
  */
 import { Server } from 'socket.io';
 import { db, now } from './lib/db.js';
 import { verifyToken } from './middleware/auth.js';
 import {
   createRoom, getRoom, joinRoom, leaveRoom, publicRoom, standings,
-  currentQuestion, scoreAnswer, endRoom, destroyRoom
+  currentQuestion, scoreAnswer, endRoom
 } from './lib/party.js';
+import * as Live from './lib/live.js';
 
 export function attachRealtime(httpServer) {
   const io = new Server(httpServer, { cors: { origin: true, credentials: true } });
@@ -41,6 +42,20 @@ export function attachRealtime(httpServer) {
       const room = getRoom(pin);
       if (!room) return ack({ error: 'room_not_found' });
       if (room.state === 'ended') return ack({ error: 'room_ended' });
+
+      // The host runs the board and admins supervise — neither plays, so
+      // neither lands on the scoreboard or earns XP.
+      const spectator = room.hostId === socket.user.id || socket.user.role === 'admin';
+      if (spectator) {
+        socket.join(`party:${room.pin}`);
+        socket.data.pin = room.pin;
+        return ack({
+          room: publicRoom(room), player: null, spectator: true,
+          isHost: room.hostId === socket.user.id,
+          question: room.state === 'question' ? currentQuestion(room) : null
+        });
+      }
+
       const { error, player } = joinRoom(room, socket.user, team);
       if (error) return ack({ error });
       socket.join(`party:${room.pin}`);
@@ -110,6 +125,98 @@ export function attachRealtime(httpServer) {
       socket.to(`party:${pin}`).emit('party:reaction', { emoji, from: socket.user.name });
     });
 
+    /* --------------------------------------------- live audio/video rooms */
+
+    socket.on('live:join', ({ scope, id }, ack = () => {}) => {
+      const perm = Live.access(socket.user, scope, id);
+      if (!perm.ok) return ack({ error: perm.error });
+
+      const room = Live.getRoom(scope, id, {
+        create: true, title: perm.course.title, hostId: perm.host ? socket.user.id : null
+      });
+      const { error, participant } = Live.join(room, socket.user, socket.id, perm.host);
+      if (error) return ack({ error });
+
+      socket.join(`live:${room.key}`);
+      socket.data.live = { scope, id };
+
+      ack({
+        room: Live.publicRoom(room),
+        me: participant,
+        isHost: perm.host,
+        iceServers: Live.iceServers()
+      });
+      // Everyone already in the room hears about the newcomer and waits for
+      // their offer — the joiner is always the one who initiates.
+      socket.to(`live:${room.key}`).emit('live:joined', { participant, room: Live.publicRoom(room) });
+    });
+
+    /** Blind relay for SDP offers/answers and ICE candidates. */
+    socket.on('live:signal', ({ to, kind, payload }) => {
+      const ctx = socket.data.live;
+      if (!ctx || !to) return;
+      const room = Live.getRoom(ctx.scope, ctx.id);
+      const peer = room?.participants.get(to);
+      if (!peer) return;
+      io.to(peer.socketId).emit('live:signal', { from: socket.user.id, kind, payload });
+    });
+
+    socket.on('live:state', (patch = {}) => {
+      const ctx = socket.data.live;
+      const room = ctx && Live.getRoom(ctx.scope, ctx.id);
+      const me = room?.participants.get(socket.user.id);
+      if (!me) return;
+      for (const k of ['audio', 'video', 'screen', 'hand']) {
+        if (patch[k] !== undefined) me[k] = !!patch[k];
+      }
+      // A screen share takes the board automatically; nobody wants to hunt for it.
+      if (patch.screen === true && !room.spotlight.includes(socket.user.id)) {
+        Live.setSpotlight(room, [socket.user.id, ...room.spotlight]);
+      }
+      if (patch.screen === false) {
+        room.spotlight = room.spotlight.filter(u => u !== socket.user.id || Live.isHost(room, u));
+      }
+      io.to(`live:${room.key}`).emit('live:room', Live.publicRoom(room));
+    });
+
+    /** Host decides who is on the board (the big tiles at the top). */
+    socket.on('live:spotlight', ({ userIds }, ack = () => {}) => {
+      const ctx = socket.data.live;
+      const room = ctx && Live.getRoom(ctx.scope, ctx.id);
+      if (!room) return ack({ error: 'no_room' });
+      if (!Live.isHost(room, socket.user.id)) return ack({ error: 'not_host' });
+      Live.setSpotlight(room, Array.isArray(userIds) ? userIds : [userIds]);
+      io.to(`live:${room.key}`).emit('live:room', Live.publicRoom(room));
+      ack({ spotlight: room.spotlight });
+    });
+
+    /** Host mutes the class; students can still unmute themselves afterwards. */
+    socket.on('live:muteAll', (_p, ack = () => {}) => {
+      const ctx = socket.data.live;
+      const room = ctx && Live.getRoom(ctx.scope, ctx.id);
+      if (!room || !Live.isHost(room, socket.user.id)) return ack({ error: 'not_host' });
+      room.forceMuted = true;
+      for (const p of room.participants.values()) if (!p.host) p.audio = false;
+      io.to(`live:${room.key}`).emit('live:muted', { by: socket.user.name });
+      io.to(`live:${room.key}`).emit('live:room', Live.publicRoom(room));
+      ack({ ok: true });
+    });
+
+    socket.on('live:remove', ({ userId }, ack = () => {}) => {
+      const ctx = socket.data.live;
+      const room = ctx && Live.getRoom(ctx.scope, ctx.id);
+      if (!room || !Live.isHost(room, socket.user.id)) return ack({ error: 'not_host' });
+      const peer = room.participants.get(userId);
+      if (peer) {
+        io.to(peer.socketId).emit('live:removed');
+        Live.leave(room, userId);
+        io.to(`live:${room.key}`).emit('live:left', { userId, room: Live.publicRoom(room) });
+      }
+      ack({ ok: true });
+    });
+
+    socket.on('live:leave', () => leaveLive(socket));
+
     /* ------------------------------------------------------- course chat */
 
     socket.on('chat:join', ({ courseId }) => {
@@ -137,6 +244,7 @@ export function attachRealtime(httpServer) {
     });
 
     socket.on('disconnect', () => {
+      leaveLive(socket);
       const room = socket.data.pin ? getRoom(socket.data.pin) : null;
       if (!room) return;
       leaveRoom(room, socket.user.id);
@@ -146,6 +254,21 @@ export function attachRealtime(httpServer) {
       });
     });
   });
+
+  function leaveLive(socket) {
+    const ctx = socket.data.live;
+    if (!ctx) return;
+    const room = Live.getRoom(ctx.scope, ctx.id);
+    socket.data.live = null;
+    if (!room) return;
+    const key = room.key;
+    Live.leave(room, socket.user.id);
+    socket.leave(`live:${key}`);
+    io.to(`live:${key}`).emit('live:left', {
+      userId: socket.user.id,
+      room: Live.getRoom(ctx.scope, ctx.id) ? Live.publicRoom(room) : null
+    });
+  }
 
   const alive = room => [...room.players.values()].filter(p => p.connected && !p.eliminated).length || 1;
 

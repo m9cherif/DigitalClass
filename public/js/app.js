@@ -19,25 +19,21 @@ function chrome() {
     return;
   }
 
+  // One entry per destination, and only what this role actually uses:
+  // admins administer, parents observe, students learn, teachers teach.
+  const plays = u.role === 'student' || u.role === 'teacher';
   const nav = [
-    { href: '/', icon: '🏠', label: t('nav.dashboard') },
-    { href: '/courses', icon: '📚', label: t('nav.courses') },
-    { href: '/party', icon: '🎉', label: t('nav.party') },
-    { href: '/forum', icon: '💬', label: t('nav.forum') },
-    { href: '/leaderboard', icon: '🏆', label: t('nav.leaderboard') },
-    { href: '/messages', icon: '✉️', label: t('nav.messages') },
-    ...(u.role === 'student' ? [
-      { href: '/flashcards', icon: '🃏', label: t('nav.flashcards') },
+    { href: '/', icon: u.role === 'admin' ? '⚙️' : '🏠',
+      label: u.role === 'admin' ? t('nav.admin') : t('nav.dashboard'), primary: true },
+    { href: '/courses', icon: '📚', label: t('nav.courses'), primary: true },
+    ...(plays ? [{ href: '/party', icon: '🎉', label: t('nav.party'), primary: true }] : []),
+    { href: '/forum', icon: '💬', label: t('nav.forum'), primary: !plays },
+    { href: '/messages', icon: '✉️', label: t('nav.messages'), primary: true },
+    ...(u.role === 'student' ? [{ href: '/flashcards', icon: '🃏', label: t('nav.flashcards') }] : []),
+    ...(u.role === 'teacher' ? [{ href: '/review', icon: '📝', label: t('review.queue') }] : []),
+    ...(plays ? [
+      { href: '/leaderboard', icon: '🏆', label: t('nav.leaderboard') },
       { href: '/playground', icon: '⌨️', label: t('nav.playground') }
-    ] : []),
-    ...(['teacher', 'admin'].includes(u.role) ? [
-      { group: t('auth.role.teacher') },
-      { href: '/review', icon: '📝', label: t('review.queue') },
-      { href: '/playground', icon: '⌨️', label: t('nav.playground') }
-    ] : []),
-    ...(u.role === 'admin' ? [
-      { group: t('admin.title') },
-      { href: '/admin', icon: '⚙️', label: t('nav.admin') }
     ] : [])
   ];
 
@@ -48,7 +44,7 @@ function chrome() {
       <span class="topbar-spacer"></span>
 
       <div class="dropdown" id="langDrop">
-        <button class="btn btn-sm">🌐 ${LANGS[i18n.lang]}</button>
+        <button class="btn btn-sm">🌐 <span class="lang-label">${LANGS[i18n.lang]}</span></button>
         <div class="dropdown-menu hidden">
           ${Object.entries(LANGS).map(([code, label]) =>
             `<div class="dropdown-item" data-lang="${code}">${label}${i18n.lang === code ? ' ✓' : ''}</div>`).join('')}
@@ -65,7 +61,7 @@ function chrome() {
       </div>
 
       <div class="dropdown" id="userDrop">
-        <button class="btn btn-sm row">${avatar(u)} <span class="small">${esc(u.name.split(' ')[0])}</span></button>
+        <button class="btn btn-sm row">${avatar(u)} <span class="small user-name">${esc(u.name.split(' ')[0])}</span></button>
         <div class="dropdown-menu hidden">
           <div class="dropdown-item" style="pointer-events:none">
             <strong>${esc(u.name)}</strong>
@@ -80,12 +76,18 @@ function chrome() {
 
     <div class="layout">
       <aside class="sidebar">
-        ${nav.map(n => n.group
-          ? `<div class="side-group">${esc(n.group)}</div>`
-          : `<a class="side-link" href="${n.href}"><span class="ic">${n.icon}</span> ${esc(n.label)}</a>`).join('')}
+        ${nav.map(n =>
+          `<a class="side-link" href="${n.href}"><span class="ic">${n.icon}</span> ${esc(n.label)}</a>`).join('')}
       </aside>
       <main id="outlet"></main>
-    </div>`;
+    </div>
+
+    <nav class="tabbar">
+      ${nav.filter(n => n.primary).slice(0, 5).map(n => `
+        <a class="tabbar-link" href="${n.href}">
+          <span class="ic">${n.icon}</span><span class="lbl">${esc(n.label)}</span>
+        </a>`).join('')}
+    </nav>`;
 
   // Dropdown open/close
   shell.querySelectorAll('.dropdown').forEach(d => {
@@ -180,7 +182,9 @@ async function loadNotifications() {
 router.add('/login', Learn.authView('login'), { auth: false });
 router.add('/register', Learn.authView('register'), { auth: false });
 
-router.add('/', Learn.dashboardView);
+// Admins land on the admin console, never on a learner dashboard.
+router.add('/', (p, out) =>
+  store.user?.role === 'admin' ? Community.adminView(p, out) : Learn.dashboardView(p, out));
 router.add('/courses', Learn.coursesView);
 router.add('/courses/new', Learn.courseNewView, { roles: ['teacher', 'admin'] });
 router.add('/courses/:id', Learn.courseView);

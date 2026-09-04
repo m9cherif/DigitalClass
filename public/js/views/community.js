@@ -1,7 +1,7 @@
 /* Views: forum, leaderboard, messages, profile, certificates, admin. */
 import {
   api, store, session, router, t, i18n, esc, toast, modal, avatar,
-  markdown, percentColor, applyTheme, LANGS
+  markdown, applyTheme, barChart, LANGS
 } from '../core.js';
 
 /* ----------------------------------------------------------------- forum */
@@ -316,69 +316,160 @@ export async function profileView({ id }, out) {
 
 /* ----------------------------------------------------------------- admin */
 
+/**
+ * The admin home. Deliberately plain: three tabs, one job each, every number
+ * labelled in words rather than jargon. Admins never see learner UI.
+ */
 export async function adminView(_p, out) {
-  const [{ users }, stats] = await Promise.all([api.get('/users'), api.get('/stats')]);
+  const [{ users }, stats, courses] = await Promise.all([
+    api.get('/users'), api.get('/stats'), api.get('/courses')
+  ]);
+
+  const roleCount = r => users.filter(u => u.role === r).length;
+  const newest = [...users].sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || '')).slice(0, 6);
+
   out.innerHTML = `
-    <h1>${t('admin.title')}</h1>
-    <div class="grid grid-4 mb">
-      <div class="stat"><div class="v">${stats.users.total}</div><div class="k">${t('admin.users')}</div></div>
-      <div class="stat"><div class="v">${stats.users.students}</div><div class="k">${t('auth.role.student')}</div></div>
-      <div class="stat"><div class="v">${stats.users.teachers}</div><div class="k">${t('auth.role.teacher')}</div></div>
-      <div class="stat"><div class="v">${stats.users.active7d}</div><div class="k">7d actifs</div></div>
+    <div class="between mb">
+      <div>
+        <h1>${t('admin.title')}</h1>
+        <p class="muted small">${t('admin.notLearner')}</p>
+      </div>
+      <a class="btn btn-primary" href="/courses/new">+ ${t('course.newCourse')}</a>
     </div>
 
-    <div class="grid grid-2 mb">
-      <div class="card"><h3>${t('admin.platformStats')}</h3>
-        <div class="table-wrap"><table><tbody>
-          ${Object.entries(stats.counts).filter(([, v]) => v > 0).map(([k, v]) =>
-            `<tr><td>${esc(k)}</td><td><strong>${v}</strong></td></tr>`).join('')}
-        </tbody></table></div>
+    <div class="tabs">
+      <button class="tab active" data-atab="overview">📊 ${t('admin.overview')}</button>
+      <button class="tab" data-atab="people">👥 ${t('admin.people')}</button>
+      <button class="tab" data-atab="content">📚 ${t('admin.content')}</button>
+    </div>
+    <div id="apane"></div>`;
+
+  const panes = {
+    overview: () => `
+      <div class="grid grid-4 mb">
+        <div class="stat"><div class="v">${stats.users.total}</div><div class="k">${t('admin.totalUsers')}</div></div>
+        <div class="stat"><div class="v">${stats.users.active7d}</div><div class="k">${t('admin.activeWeek')}</div></div>
+        <div class="stat"><div class="v">${courses.courses.length}</div><div class="k">${t('nav.courses')}</div></div>
+        <div class="stat"><div class="v">${stats.counts.attempts || 0}</div><div class="k">${t('quiz.attempts')}</div></div>
       </div>
-      <div class="card"><h3>${t('admin.questionTypes')}</h3>
-        <div class="row">${Object.entries(stats.questionTypes).filter(([, v]) => v > 0)
+
+      <div class="grid grid-2">
+        <div class="card">
+          <h3>${t('admin.people')}</h3>
+          ${[['student', stats.users.students], ['teacher', stats.users.teachers],
+             ['parent', stats.users.parents], ['admin', roleCount('admin')]]
+            .map(([role, n]) => `
+              <div class="between" style="padding:.4rem 0;border-block-end:1px solid var(--border)">
+                <span>${t('auth.role.' + role)}</span><strong>${n}</strong>
+              </div>`).join('')}
+        </div>
+
+        <div class="card">
+          <h3>${t('admin.content')}</h3>
+          ${[['nav.courses', courses.courses.length], ['course.lessons', stats.counts.lessons || 0],
+             ['course.quizzes', stats.counts.quizzes || 0], ['quiz.question', stats.counts.questions || 0]]
+            .map(([key, n]) => `
+              <div class="between" style="padding:.4rem 0;border-block-end:1px solid var(--border)">
+                <span>${t(key)}</span><strong>${n}</strong>
+              </div>`).join('')}
+          ${stats.liveParties ? `<div class="badge badge-success mt">🎉 ${stats.liveParties} ${t('party.live')}</div>` : ''}
+        </div>
+      </div>
+
+      <div class="card mt">
+        <h3>${t('admin.newestUsers')}</h3>
+        ${newest.map(u => `
+          <div class="between" style="padding:.35rem 0">
+            <span class="row">${avatar(u)} <span>
+              <strong class="small">${esc(u.name)}</strong>
+              <div class="tiny muted">${esc(u.email)}</div></span></span>
+            <span class="badge">${t('auth.role.' + u.role)}</span>
+          </div>`).join('')}
+      </div>`,
+
+    people: () => `
+      <div class="card">
+        <input id="q" class="search-input mb" placeholder="${t('admin.searchUser')}">
+        <p class="tiny muted">${t('admin.roleHint')} ${t('admin.suspendHint')}</p>
+        <div id="ulist" class="stack"></div>
+      </div>`,
+
+    content: () => `
+      <div class="card mb">
+        <h3>${t('admin.questionTypes')}</h3>
+        ${barChart(Object.entries(stats.questionTypes).filter(([, v]) => v > 0)
           .sort((a, b) => b[1] - a[1])
-          .map(([k, v]) => `<span class="badge">${t('qtype.' + k)} ${v}</span>`).join('')}</div>
+          .map(([k, v]) => ({ label: t('qtype.' + k), value: v, display: v })))}
       </div>
-    </div>
+      <div class="card">
+        <h3>${t('nav.courses')}</h3>
+        <div class="stack">
+          ${courses.courses.map(c => `
+            <a class="between course-row" href="/courses/${c.id}">
+              <span class="row">
+                <span class="dot-color" style="background:${esc(c.color || 'var(--primary)')}"></span>
+                <span><strong>${esc(c.title)}</strong>
+                  <div class="tiny muted">${esc(c.teacher?.name || '')} · ${c.studentCount} ${t('course.students')}</div>
+                </span>
+              </span>
+              <span class="row">
+                ${c.code ? `<span class="badge mono">${esc(c.code)}</span>` : ''}
+                <span class="badge badge-${c.status === 'published' ? 'success' : 'warning'}">${esc(c.status)}</span>
+              </span>
+            </a>`).join('') || `<div class="muted small">${t('common.empty')}</div>`}
+        </div>
+      </div>`
+  };
 
-    <div class="card">
-      <div class="between mb"><h3>${t('admin.users')}</h3>
-        <input id="q" placeholder="${t('common.search')}" style="max-inline-size:230px"></div>
-      <div class="table-wrap"><table>
-        <thead><tr><th>${t('auth.name')}</th><th>${t('auth.email')}</th><th>${t('admin.role')}</th>
-          <th>XP</th><th>${t('admin.status')}</th><th></th></tr></thead>
-        <tbody id="rows"></tbody>
-      </table></div>
-    </div>`;
+  const pane = out.querySelector('#apane');
 
-  const rows = out.querySelector('#rows');
-  const draw = (filter = '') => {
-    rows.innerHTML = users
-      .filter(u => (u.name + u.email).toLowerCase().includes(filter))
-      .map(u => `
-        <tr>
-          <td class="row">${avatar(u)} ${esc(u.name)}</td>
-          <td class="tiny mono">${esc(u.email)}</td>
-          <td><select data-role="${u.id}" style="inline-size:auto">
-            ${['student', 'teacher', 'parent', 'admin'].map(r =>
-              `<option ${u.role === r ? 'selected' : ''}>${r}</option>`).join('')}</select></td>
-          <td>${i18n.num(u.xp)}</td>
-          <td><span class="badge badge-${u.status === 'active' ? 'success' : 'danger'}">${esc(u.status)}</span></td>
-          <td><button class="btn btn-sm ${u.status === 'active' ? 'btn-danger' : ''}" data-toggle="${u.id}">
-            ${t(u.status === 'active' ? 'admin.suspend' : 'admin.activate')}</button></td>
-        </tr>`).join('');
+  const drawUsers = (filter = '') => {
+    const list = out.querySelector('#ulist');
+    if (!list) return;
+    const rows = users.filter(u => (u.name + u.email).toLowerCase().includes(filter));
+    list.innerHTML = rows.length ? rows.map(u => `
+      <div class="user-row">
+        <span class="row" style="flex:1;min-inline-size:0">
+          ${avatar(u)}
+          <span style="min-inline-size:0">
+            <strong class="small">${esc(u.name)}</strong>
+            <div class="tiny muted ellipsis">${esc(u.email)}</div>
+          </span>
+        </span>
+        <select data-role="${u.id}" class="role-select">
+          ${['student', 'teacher', 'parent', 'admin'].map(r =>
+            `<option value="${r}" ${u.role === r ? 'selected' : ''}>${t('auth.role.' + r)}</option>`).join('')}
+        </select>
+        <button class="btn btn-sm ${u.status === 'active' ? 'btn-danger' : 'btn-success'}" data-toggle="${u.id}">
+          ${t(u.status === 'active' ? 'admin.suspend' : 'admin.activate')}
+        </button>
+      </div>`).join('') : `<div class="muted small">${t('admin.noResults')}</div>`;
 
-    rows.querySelectorAll('[data-role]').forEach(s => s.onchange = async () => {
+    list.querySelectorAll('[data-role]').forEach(s => s.onchange = async () => {
       await api.patch(`/users/${s.dataset.role}`, { role: s.value });
-      toast('✅', 'success');
+      users.find(x => x.id === s.dataset.role).role = s.value;
+      toast('✅ ' + t('quiz.saved'), 'success');
     });
-    rows.querySelectorAll('[data-toggle]').forEach(b => b.onclick = async () => {
+    list.querySelectorAll('[data-toggle]').forEach(b => b.onclick = async () => {
       const u = users.find(x => x.id === b.dataset.toggle);
       u.status = u.status === 'active' ? 'suspended' : 'active';
       await api.patch(`/users/${u.id}`, { status: u.status });
-      draw(out.querySelector('#q').value.toLowerCase());
+      drawUsers(out.querySelector('#q')?.value.toLowerCase() || '');
     });
   };
-  out.querySelector('#q').oninput = e => draw(e.target.value.toLowerCase());
-  draw();
+
+  const show = name => {
+    pane.innerHTML = panes[name]();
+    if (name === 'people') {
+      out.querySelector('#q').oninput = e => drawUsers(e.target.value.toLowerCase());
+      drawUsers();
+    }
+  };
+
+  out.querySelectorAll('[data-atab]').forEach(b => b.onclick = () => {
+    out.querySelectorAll('[data-atab]').forEach(x => x.classList.remove('active'));
+    b.classList.add('active');
+    show(b.dataset.atab);
+  });
+  show('overview');
 }

@@ -14,8 +14,14 @@ plain Node.js — no build step, no framework, no external database.
 - **Live quiz "parties"** — Kahoot-style multiplayer over Socket.IO: a 6-character
   PIN, synchronized question rounds, speed + streak scoring, team/survival/marathon
   modes, reactions, and a podium at the end.
-- **Courses**: lessons (Markdown), enrollment, progress tracking, assignments with
-  file submissions, course chat, roster, certificates on completion.
+- **Live classroom** — microphone, camera and screen sharing over WebRTC, inside
+  any course *and* any quiz. Everyone can speak and share; the teacher decides
+  **who is on the board** (up to four spotlight tiles), can mute the room, raise
+  hands are visible, and a screen share takes the board automatically. Media is a
+  peer-to-peer mesh, so the server only relays signalling.
+- **Courses**: 6-character **join codes** (students enrol by typing the code),
+  lessons (Markdown), progress tracking, assignments with file submissions,
+  course chat, roster, certificates on completion.
 - **Gamification**: XP, levels, daily streaks, 19 badges, a global/per-course
   leaderboard.
 - **Community**: a Stack-Overflow-style forum (voting, accepted answers), direct
@@ -24,9 +30,15 @@ plain Node.js — no build step, no framework, no external database.
   item analysis (difficulty, common wrong answers), an essay-grading queue.
 - **Parent accounts**: link to a child via a student code, read-only progress
   reports — no access to anything else.
-- **Admin**: user management, platform-wide stats.
+- **Admin**: a plain three-tab console (overview / people / content). Admins run
+  the platform and are *not* learners — the server refuses to open a quiz attempt
+  for them, and they never appear in leaderboards.
+- **Mobile-first**: a bottom tab bar, an off-canvas drawer, thumb-sized controls
+  and 16px inputs (no iOS zoom-on-focus). Every page is verified free of
+  horizontal overflow at 390px, in both LTR and RTL.
 - **i18n**: every UI string and every piece of seeded content (courses, lessons,
-  quizzes) ships in FR/EN/AR; Arabic renders full RTL (code blocks and PINs stay LTR).
+  quizzes) ships in FR/EN/AR; Arabic renders full RTL (code blocks, join codes and
+  PINs stay LTR).
 
 ## Stack
 
@@ -62,12 +74,13 @@ reseeds. Copy `.env.example` to `.env` and set `JWT_SECRET` before deploying.
 ```
 server/
   index.js         Express app, static hosting, error handling
-  realtime.js       Socket.IO: parties, course chat
+  realtime.js       Socket.IO: parties, live A/V signalling, course chat
   seed.js            Demo data generator
   lib/
     db.js            Embedded JSON document store
     gamification.js  XP, levels, streaks, badges
     party.js         Live party room state machine
+    live.js          Live A/V rooms: membership, spotlight, ICE config
   quiz/
     types.js         The 20 question-type catalogue
     grader.js         Auto-grading for every type + spaced repetition
@@ -82,9 +95,20 @@ public/
   js/
     core.js           i18n, API client, router, small DOM helpers
     questions.js       Render + read-back for all 20 question types
+    live.js            WebRTC mesh client + live classroom UI
     app.js             Shell, navigation, route table
     views/*.js          Page views
 ```
+
+## Live classroom requirements
+
+Browsers only grant camera/microphone access on **HTTPS** (or `localhost`), so the
+live classroom needs a TLS certificate in production. Media flows peer-to-peer;
+Google's public STUN servers are used by default. On restrictive school networks
+peers may fail to connect without a TURN relay — set `TURN_URL`, `TURN_USER` and
+`TURN_PASS` in `.env` and it is offered to clients automatically. Rooms are a full
+mesh, capped at 16 participants (`MAX_PARTICIPANTS` in `server/lib/live.js`);
+beyond that you would want an SFU.
 
 ## Notes on the code sandbox
 

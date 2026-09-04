@@ -13,6 +13,11 @@ const shuffle = a => { for (let i = a.length - 1; i > 0; i--) { const j = Math.f
 router.post('/start', requireAuth, (req, res) => {
   const quiz = db.quizzes.byId(req.body?.quizId);
   if (!quiz) return res.status(404).json({ error: 'quiz_not_found' });
+  // Admins run the platform, they are not learners: no attempts, no scores,
+  // no leaderboard presence. Same for guardians, who only ever read reports.
+  if (req.user.role === 'admin' || req.user.role === 'parent') {
+    return res.status(403).json({ error: 'role_cannot_attempt', role: req.user.role });
+  }
   const course = db.courses.byId(quiz.courseId);
   const teaching = canEditCourse(req.user, course);
   if (!quiz.published && !teaching) return res.status(403).json({ error: 'not_published' });

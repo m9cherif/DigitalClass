@@ -11,6 +11,8 @@ export async function quizView({ id }, out) {
   const data = await api.get(`/quizzes/${id}`);
   const q = data.quiz;
   const best = data.attempts.filter(a => a.percent != null);
+  // Admins supervise and parents observe — neither ever answers questions.
+  const canAnswer = !['admin', 'parent'].includes(store.user.role);
 
   out.innerHTML = `
     <a href="/courses/${q.courseId}" class="small">← ${t('common.back')}</a>
@@ -25,8 +27,8 @@ export async function quizView({ id }, out) {
           <h1>${esc(i18n.pick(q, 'title', q.title))}</h1>
           <p class="muted">${esc(q.description || '')}</p>
         </div>
-        <div class="stack" style="min-inline-size:200px">
-          <button class="btn btn-primary btn-lg" id="start">${t('quiz.start')}</button>
+        <div class="stack course-actions">
+          ${canAnswer ? `<button class="btn btn-primary btn-lg" id="start">${t('quiz.start')}</button>` : ''}
           ${data.editable ? `<a class="btn" href="/quiz/${id}/edit">✏️ ${t('common.edit')}</a>
                              <a class="btn" href="/analytics/${id}">📊 ${t('analytics.title')}</a>` : ''}
         </div>
@@ -37,6 +39,12 @@ export async function quizView({ id }, out) {
         <div class="stat"><div class="v">${q.passPercent}%</div><div class="k">${t('quiz.passPercent')}</div></div>
         <div class="stat"><div class="v">${q.maxAttempts || '∞'}</div><div class="k">${t('quiz.attempts')}</div></div>
       </div>
+    </div>
+
+    ${!canAnswer ? `<div class="card mt small muted">ℹ️ ${t('admin.notLearner')}</div>` : ''}
+
+    <div class="card mt live-card">
+      <div id="liveHost"></div>
     </div>
 
     <div class="card mt">
@@ -51,14 +59,17 @@ export async function quizView({ id }, out) {
         : `<div class="muted small">${t('quiz.noAttempts')}</div>`}
     </div>`;
 
-  out.querySelector('#start').onclick = async () => {
+  import('../live.js').then(({ liveSection }) =>
+    liveSection(out.querySelector('#liveHost'), { scope: 'quiz', id }));
+
+  out.querySelector('#start')?.addEventListener('click', async () => {
     try {
       const r = await api.post('/attempts/start', { quizId: id });
       runPlayer(r, q, out);
     } catch (e) {
       toast(t(e.body?.error === 'max_attempts_reached' ? 'quiz.attempts' : 'common.error'), 'error');
     }
-  };
+  });
 }
 
 /* ----------------------------------------------------------- quiz player */

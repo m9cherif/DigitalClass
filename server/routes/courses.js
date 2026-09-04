@@ -7,6 +7,25 @@ import {
 
 const router = Router();
 
+/* ---------------------------------------------------------- join codes */
+
+// Ambiguous glyphs (0/O, 1/I) are left out so a code read aloud is unambiguous.
+const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+
+function newCourseCode() {
+  let code;
+  do {
+    code = Array.from({ length: 6 }, () => CODE_CHARS[Math.floor(Math.random() * CODE_CHARS.length)]).join('');
+  } while (db.courses.findOne({ code }));
+  return code;
+}
+
+/** Courses created before join codes existed get one the first time they are read. */
+function ensureCode(course) {
+  if (course.code) return course;
+  return db.courses.update(course.id, { code: newCourseCode() }) || course;
+}
+
 /** Course catalogue with search, topic filter and localisation-aware fields. */
 router.get('/', (req, res) => {
   const { q = '', topic, level, teacherId, mine } = req.query;
@@ -26,6 +45,8 @@ router.get('/', (req, res) => {
   res.json({
     courses: rows.map(c => ({
       ...c,
+      // The join code is a teacher's secret: never expose it in the catalogue.
+      code: canEditCourse(req.user, c) ? ensureCode(c).code : undefined,
       teacher: publicUser(db.users.byId(c.teacherId)),
       lessonCount: db.lessons.count({ courseId: c.id }),
       quizCount: db.quizzes.count({ courseId: c.id }),
@@ -52,7 +73,11 @@ router.get('/:id', (req, res) => {
   const lessons = db.lessons.find({ courseId: course.id }).sort((a, b) => a.order - b.order);
 
   res.json({
-    course: { ...course, teacher: publicUser(db.users.byId(course.teacherId)) },
+    course: {
+      ...course,
+      code: editable ? ensureCode(course).code : undefined,
+      teacher: publicUser(db.users.byId(course.teacherId))
+    },
     editable, enrolled,
     progress: enrollment?.progress || {},
     // Lesson bodies stay hidden from people who have not enrolled (previews excepted).
@@ -71,7 +96,7 @@ router.post('/', requireRole('teacher', 'admin'), (req, res) => {
   const b = req.body || {};
   if (!b.title) return res.status(400).json({ error: 'title_required' });
   const course = db.courses.insert({
-    title: b.title, description: b.description || '',
+    title: b.title, description: b.description || '', code: newCourseCode(),
     topic: b.topic || 'programming', level: b.level || 'beginner',
     lang: b.lang || 'fr', langs: b.langs || ['fr'],
     tags: b.tags || [], cover: b.cover || null, color: b.color || '#6366f1',
@@ -161,6 +186,43 @@ router.post('/:courseId/lessons/:lessonId/complete', requireAuth, (req, res) => 
 });
 
 /* ------------------------------------------------------------ enrollment */
+
+/**
+ * Join a course with the 6-character code the teacher shares.
+ * Works even for unpublished courses — the code IS the invitation.
+ */
+router.post('/join', requireRole('student'), (req, res) => {
+  const code = String(req.body?.code || '').trim().toUpperCase();
+  if (code.length !== 6) return res.status(400).json({ error: 'bad_code_format' });
+
+  const course = db.courses.findOne({ code });
+  if (!course) return res.status(404).json({ error: 'code_not_found' });
+
+  const existing = db.enrollments.findOne({ userId: req.user.id, courseId: course.id });
+  if (existing) {
+    db.enrollments.update(existing.id, { status: 'active' });
+    return res.json({ course: { id: course.id, title: course.title }, alreadyMember: true });
+  }
+
+  db.enrollments.insert({
+    userId: req.user.id, courseId: course.id, status: 'active',
+    progress: {}, completed: false, enrolledAt: now(), joinedByCode: true
+  });
+  db.notifications.insert({
+    userId: course.teacherId, kind: 'new_student', read: false,
+    data: { courseId: course.id, courseTitle: course.title, studentName: req.user.name }
+  });
+  awardXp(req.user.id, 10, 'enroll');
+  res.status(201).json({ course: { id: course.id, title: course.title }, alreadyMember: false });
+});
+
+/** Rotate the code — used when a class ends or a code leaks. */
+router.post('/:id/code/regenerate', requireAuth, (req, res) => {
+  const course = db.courses.byId(req.params.id);
+  if (!course) return res.status(404).json({ error: 'not_found' });
+  if (!canEditCourse(req.user, course)) return res.status(403).json({ error: 'forbidden' });
+  res.json({ code: db.courses.update(course.id, { code: newCourseCode() }).code });
+});
 
 router.post('/:id/enroll', requireRole('student'), (req, res) => {
   const course = db.courses.byId(req.params.id);

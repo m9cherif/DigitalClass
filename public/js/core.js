@@ -195,8 +195,10 @@ export const router = {
           err.status === 403 ? '403 — ' + t('common.error') : t('common.error')}<div class="small mt">${esc(err.message || '')}</div></div>`;
       }
       window.scrollTo(0, 0);
-      document.querySelectorAll('.side-link').forEach(a =>
-        a.classList.toggle('active', a.getAttribute('href') === path));
+      document.querySelectorAll('.side-link, .tabbar-link').forEach(a => {
+        const href = a.getAttribute('href');
+        a.classList.toggle('active', href === path || (href !== '/' && path.startsWith(href)));
+      });
       document.querySelector('.sidebar')?.classList.remove('open');
       return;
     }

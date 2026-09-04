@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { db } from '../lib/db.js';
 import { QUESTION_TYPES, TYPE_LIST } from '../quiz/types.js';
 import { runJs } from '../quiz/sandbox.js';
-import { requireAuth, requireRole, canEditCourse, isEnrolled } from '../middleware/auth.js';
+import { requireAuth, requireRole, canEditCourse } from '../middleware/auth.js';
 
 const router = Router();
 

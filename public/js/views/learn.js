@@ -260,18 +260,57 @@ export async function coursesView(_p, out) {
   const { courses } = await api.get('/courses');
   const topics = [...new Set(courses.map(c => c.topic))];
   const canCreate = ['teacher', 'admin'].includes(store.user.role);
+  const isStudent = store.user.role === 'student';
 
   out.innerHTML = `
     <div class="between mb">
       <h1>${t('course.catalogue')}</h1>
       ${canCreate ? `<a class="btn btn-primary" href="/courses/new">+ ${t('course.newCourse')}</a>` : ''}
     </div>
-    <div class="row mb">
-      <input id="q" placeholder="${t('common.search')}" style="max-inline-size:280px">
-      <button class="chip selected" data-topic="">${t('common.all')}</button>
-      ${topics.map(tp => `<button class="chip" data-topic="${tp}">${t('topic.' + tp)}</button>`).join('')}
+
+    ${isStudent ? `
+      <form class="card join-card mb" id="joinForm">
+        <div class="join-lead">
+          <strong>🔑 ${t('course.join')}</strong>
+          <div class="small muted">${t('course.joinHint')}</div>
+        </div>
+        <div class="join-controls">
+          <input id="joinCode" class="code-input" maxlength="6" autocomplete="off"
+                 placeholder="${t('course.joinPlaceholder')}" aria-label="${t('course.code')}">
+          <button class="btn btn-primary">${t('course.join')}</button>
+        </div>
+        <div id="joinErr" class="small" style="color:var(--danger)"></div>
+      </form>` : ''}
+
+    <div class="row mb filters">
+      <input id="q" placeholder="${t('common.search')}" class="search-input">
+      <div class="chips-scroll">
+        <button class="chip selected" data-topic="">${t('common.all')}</button>
+        ${topics.map(tp => `<button class="chip" data-topic="${tp}">${t('topic.' + tp)}</button>`).join('')}
+      </div>
     </div>
     <div id="list" class="grid grid-2"></div>`;
+
+  const joinForm = out.querySelector('#joinForm');
+  if (joinForm) {
+    const input = out.querySelector('#joinCode');
+    input.oninput = () => { input.value = input.value.toUpperCase().replace(/[^A-Z0-9]/g, ''); };
+    joinForm.onsubmit = async e => {
+      e.preventDefault();
+      const err = out.querySelector('#joinErr');
+      err.textContent = '';
+      try {
+        const r = await api.post('/courses/join', { code: input.value });
+        toast(r.alreadyMember
+          ? t('course.alreadyMember')
+          : '✅ ' + t('course.joined', { course: esc(r.course.title) }), 'success');
+        router.go('/courses/' + r.course.id);
+      } catch (ex) {
+        const code = ex.body?.error;
+        err.textContent = t('course.' + code) !== 'course.' + code ? t('course.' + code) : t('common.error');
+      }
+    };
+  }
 
   const list = out.querySelector('#list');
   let filter = { q: '', topic: '' };
@@ -360,7 +399,7 @@ export async function courseView({ id }, out) {
           <p class="muted">${esc(desc(course))}</p>
           <div class="small muted">${t('course.by')} ${esc(course.teacher?.name || '')}</div>
         </div>
-        <div class="stack" style="min-inline-size:190px">
+        <div class="stack course-actions">
           ${c.enrolled
             ? `<div><div class="between small"><span>${t('course.progress')}</span><span>${pct}%</span></div>
                  <div class="progress mt"><i style="inline-size:${pct}%"></i></div></div>`
@@ -374,13 +413,47 @@ export async function courseView({ id }, out) {
       </div>
     </div>
 
+    ${course.code ? `
+      <div class="card code-card mb">
+        <div>
+          <div class="small muted">${t('course.code')}</div>
+          <div class="code-value" id="codeValue">${esc(course.code)}</div>
+          <div class="tiny muted">${t('course.codeHint')}</div>
+        </div>
+        <div class="row">
+          <button class="btn btn-sm" id="copyCode">📋</button>
+          <button class="btn btn-sm" id="newCode">${t('course.regenerate')}</button>
+        </div>
+      </div>` : ''}
+
     <div class="tabs">
       <button class="tab active" data-tab="lessons">${t('course.lessons')} (${c.lessons.length})</button>
       <button class="tab" data-tab="quizzes">${t('course.quizzes')} (${c.quizzes.length})</button>
       <button class="tab" data-tab="assignments">${t('course.assignments')} (${c.assignments.length})</button>
+      ${c.enrolled || c.editable ? `<button class="tab" data-tab="live">🎥 ${t('nav.live')}</button>` : ''}
       <button class="tab" data-tab="chat">${t('course.chat')}</button>
     </div>
     <div id="tab"></div>`;
+
+  out.querySelector('#copyCode')?.addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(course.code);
+      toast('✅ ' + t('course.codeCopied'), 'success');
+    } catch {
+      // Clipboard is blocked on insecure origins — select the text instead.
+      const range = document.createRange();
+      range.selectNodeContents(out.querySelector('#codeValue'));
+      getSelection().removeAllRanges();
+      getSelection().addRange(range);
+    }
+  });
+
+  out.querySelector('#newCode')?.addEventListener('click', async () => {
+    const r = await api.post(`/courses/${id}/code/regenerate`);
+    out.querySelector('#codeValue').textContent = r.code;
+    course.code = r.code;
+    toast('🔑 ' + r.code, 'success');
+  });
 
   const panes = {
     lessons: () => `
@@ -434,9 +507,11 @@ export async function courseView({ id }, out) {
           </span>
         </div>`).join('') || `<div class="empty-state">${t('common.empty')}</div>`}</div>`,
 
+    live: () => `<div id="liveHost"></div>`,
+
     chat: () => `
       <div class="card">
-        <div id="chatLog" class="stack" style="max-block-size:340px;overflow-y:auto"></div>
+        <div id="chatLog" class="stack chat-log"></div>
         <div class="row mt">
           <input id="chatInput" placeholder="${t('msg.placeholder')}" style="flex:1">
           <button class="btn btn-primary" id="chatSend">${t('msg.send')}</button>
@@ -445,9 +520,13 @@ export async function courseView({ id }, out) {
   };
 
   const tabEl = out.querySelector('#tab');
-  const showTab = name => {
+  const showTab = async name => {
     tabEl.innerHTML = panes[name]();
     if (name === 'chat') mountChat(id, tabEl);
+    if (name === 'live') {
+      const { liveSection } = await import('../live.js');
+      liveSection(tabEl.querySelector('#liveHost'), { scope: 'course', id });
+    }
     wireTab(name);
   };
 
