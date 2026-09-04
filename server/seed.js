@@ -4,12 +4,14 @@
  * Run with `npm run seed` (or `npm run reset` to wipe first).
  */
 import 'dotenv/config';
-import { db, flushAll, COLLECTIONS } from './lib/db.js';
+import { db, flushAll, initStore, COLLECTIONS, storeInfo } from './lib/db.js';
 import { hashPassword } from './middleware/auth.js';
 
+const backend = await initStore();
 const force = process.argv.includes('--force');
+
 if (db.users.count() && !force) {
-  console.log('Data already present. Use `npm run reset` to wipe and reseed.');
+  console.log(`Data already present in the ${backend} store. Use \`npm run reset\` to wipe and reseed.`);
   process.exit(0);
 }
 if (force) for (const c of COLLECTIONS) db[c]?.clear();
@@ -486,10 +488,10 @@ db.posts.insert({
   body: 'Le pire cas arrive quand le pivot est systématiquement le plus petit ou le plus grand élément : les partitions sont de taille 0 et n-1, on obtient n niveaux de récursion à n comparaisons, donc O(n²). Un pivot aléatoire ou médian-de-trois rend ce cas très improbable.'
 });
 
-flushAll();
+await flushAll();
 
 console.log(`
-  DigitalClass seeded.
+  DigitalClass seeded into the ${backend} store (${storeInfo().failures} write failures).
 
   Accounts (password for all: password123)
     admin    admin@digitalclass.dev

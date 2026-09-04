@@ -43,20 +43,69 @@ plain Node.js — no build step, no framework, no external database.
 ## Stack
 
 Node.js + Express 5 + Socket.IO on the server; a dependency-free vanilla-JS SPA
-(ES modules, no bundler) on the client. Data is stored as JSON files in `/data`
-via a small embedded document store (`server/lib/db.js`) — no database server to
-install. Swapping in Postgres/Mongo later only touches that one file.
+(ES modules, no bundler) on the client.
+
+## Storage
+
+`server/lib/db.js` is an in-memory document store with a pluggable durable
+backend. Reads are synchronous and served from memory; every write updates
+memory and is forwarded to the backend.
+
+| Backend | When it is used | Durability |
+|---|---|---|
+| **Supabase (Postgres)** | automatically, whenever `SUPABASE_URL` + a service key are in the environment | source of truth, nothing touches disk, survives redeploys |
+| **JSON files** | the zero-configuration fallback | `data/*.json`, fine for local development |
+
+Nothing else in the codebase changes between the two — routes, gamification and
+the realtime layer are unaware of which backend is live. `GET /api/health`
+reports the active backend, row counts and any pending/failed writes.
+
+### Pointing it at Supabase
+
+1. Run `sql/001_initial_schema.sql` in the Supabase SQL editor (22 tables, one
+   per collection, plus indexes and RLS).
+2. Set these where your host keeps configuration — **no `.env` file needed**;
+   on Hostinger add them under the Node.js app's environment variables:
+
+   ```
+   SUPABASE_URL=https://<project-ref>.supabase.co
+   SUPABASE_SERVICE_ROLE_KEY=<service_role key>
+   ```
+
+   `SUPABASE_PROJECT_URL` / `SUPABASE_SERVICE_KEY` / `SUPABASE_KEY` are also
+   accepted, so whatever name your host's integration injects will be picked up.
+3. Restart. The log line and `/api/health` will say `store: supabase`.
+4. Optional — copy existing local data up once: `npm run migrate`
+   (`npm run migrate:dry` previews it, `--wipe` replaces instead of merging).
+
+Each table stores the document in a `data jsonb` column, with the
+frequently-filtered fields (email, role, course_id, …) exposed as **generated
+columns** so they are indexed and readable in the Supabase table editor without
+the application maintaining a field-by-field mapping.
+
+**Security**: the server connects with the service-role key, so RLS is bypassed
+server-side. The schema enables RLS on every table and defines *no* policies,
+which means the anon/publishable key can read nothing. Keep it that way unless
+you deliberately want browsers talking to the database directly.
+
+**Scope**: because the whole dataset is held in memory, this design assumes a
+single app instance — the same assumption the Socket.IO party and live-class
+rooms already make. Running multiple instances would need the routes converted
+to async queries.
 
 ## Getting started
 
 ```bash
 npm install
-npm run seed     # creates data/*.json with a demo school
+npm run seed     # writes a demo school into whichever store is configured
 npm start         # http://localhost:3000
 ```
 
+With no configuration this runs entirely on local JSON files. Set the Supabase
+variables (see **Storage**) and the same commands target Postgres instead.
+
 `npm run dev` runs with `--watch` for auto-restart. `npm run reset` wipes and
-reseeds. Copy `.env.example` to `.env` and set `JWT_SECRET` before deploying.
+reseeds. Set `JWT_SECRET` in your host's environment before deploying.
 
 ### Demo accounts (password: `password123`)
 
@@ -72,12 +121,17 @@ reseeds. Copy `.env.example` to `.env` and set `JWT_SECRET` before deploying.
 ## Project layout
 
 ```
+sql/
+  001_initial_schema.sql   Supabase/Postgres schema (run once)
+
 server/
   index.js         Express app, static hosting, error handling
   realtime.js       Socket.IO: parties, live A/V signalling, course chat
   seed.js            Demo data generator
+  migrate-to-supabase.js   One-shot copy of data/*.json into Postgres
   lib/
-    db.js            Embedded JSON document store
+    db.js            In-memory store + pluggable durable backend
+    supabase.js      Supabase backend: hydrate, ordered write queue, retry
     gamification.js  XP, levels, streaks, badges
     party.js         Live party room state machine
     live.js          Live A/V rooms: membership, spotlight, ICE config

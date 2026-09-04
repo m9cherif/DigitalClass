@@ -1,16 +1,26 @@
 /**
- * Tiny embedded JSON document store.
- * Zero native dependencies: every collection is one JSON file under /data,
- * kept in memory and flushed atomically (write temp -> rename) with debouncing.
+ * In-memory document store with a pluggable durable backend.
+ *
+ * Reads are synchronous and served from memory, which is what lets the rest of
+ * the codebase stay simple. Writes update memory immediately and are forwarded
+ * to the backend:
+ *
+ *   - Supabase  — used automatically when SUPABASE_URL and a service key are
+ *                 present in the environment. Postgres is the source of truth;
+ *                 nothing is written to disk. Survives host redeploys.
+ *   - JSON files — the zero-configuration fallback for local development,
+ *                 one file per collection under /data.
+ *
+ * Call `await initStore()` once at boot, before serving traffic.
  */
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
+import { isConfigured, createSupabaseBackend, supabaseUrl } from './supabase.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const DATA_DIR = path.join(ROOT, 'data');
-fs.mkdirSync(DATA_DIR, { recursive: true });
 
 export const COLLECTIONS = [
   'users', 'courses', 'lessons', 'enrollments', 'quizzes', 'questions',
@@ -20,48 +30,87 @@ export const COLLECTIONS = [
 ];
 
 const cache = new Map();
-const dirty = new Set();
-let timer = null;
+let backend = null;
+let ready = false;
 
-function file(name) { return path.join(DATA_DIR, `${name}.json`); }
+/* ------------------------------------------------------------ file backend */
+
+function createFileBackend() {
+  fs.mkdirSync(DATA_DIR, { recursive: true });
+  const file = name => path.join(DATA_DIR, `${name}.json`);
+  const dirty = new Set();
+  let timer = null;
+
+  const write = name => {
+    const tmp = file(name) + '.tmp';
+    fs.writeFileSync(tmp, JSON.stringify(cache.get(name) ?? [], null, 2));
+    fs.renameSync(tmp, file(name));
+  };
+
+  return {
+    name: 'files',
+    async hydrate(collections) {
+      const out = {};
+      for (const c of collections) {
+        try {
+          const rows = JSON.parse(fs.readFileSync(file(c), 'utf8'));
+          out[c] = Array.isArray(rows) ? rows : [];
+        } catch { out[c] = []; }
+      }
+      return out;
+    },
+    // The whole collection is rewritten, so the op detail is irrelevant here.
+    persist(op) {
+      dirty.add(op.collection);
+      if (timer) return;
+      timer = setTimeout(() => { timer = null; this.flushSync(); }, 40);
+    },
+    flushSync() {
+      for (const n of dirty) write(n);
+      dirty.clear();
+    },
+    async flush() { this.flushSync(); },
+    stats: () => ({ pending: dirty.size, failures: 0 })
+  };
+}
+
+/* ---------------------------------------------------------------- lifecycle */
+
+/** Choose a backend and load every collection into memory. */
+export async function initStore({ log = console } = {}) {
+  backend = isConfigured() ? createSupabaseBackend({ log }) : createFileBackend();
+  const loaded = await backend.hydrate(COLLECTIONS);
+  for (const c of COLLECTIONS) cache.set(c, loaded[c] ?? []);
+  ready = true;
+  const total = COLLECTIONS.reduce((n, c) => n + cache.get(c).length, 0);
+  log.log?.(`  store: ${backend.name}${backend.name === 'supabase' ? ` (${supabaseUrl()})` : ''} · ${total} rows`);
+  return backend.name;
+}
+
+export const storeInfo = () => ({
+  backend: backend?.name ?? 'uninitialised',
+  ready,
+  rows: Object.fromEntries(COLLECTIONS.map(c => [c, cache.get(c)?.length ?? 0])),
+  ...(backend?.stats() ?? {})
+});
+
+export async function flushAll() {
+  backend?.flushSync?.();
+  await backend?.flush();
+}
 
 function load(name) {
-  if (cache.has(name)) return cache.get(name);
-  let rows = [];
-  try {
-    const raw = fs.readFileSync(file(name), 'utf8');
-    rows = JSON.parse(raw);
-    if (!Array.isArray(rows)) rows = [];
-  } catch { rows = []; }
-  cache.set(name, rows);
-  return rows;
+  if (!ready) {
+    throw new Error(`db.${name} used before initStore() — await initStore() during boot`);
+  }
+  return cache.get(name) ?? [];
 }
 
-function flush(name) {
-  const tmp = file(name) + '.tmp';
-  fs.writeFileSync(tmp, JSON.stringify(cache.get(name) ?? [], null, 2));
-  fs.renameSync(tmp, file(name));
-}
+const persist = op => backend?.persist(op);
 
-function schedule(name) {
-  dirty.add(name);
-  if (timer) return;
-  timer = setTimeout(() => {
-    timer = null;
-    for (const n of dirty) flush(n);
-    dirty.clear();
-  }, 40);
-}
+/* ------------------------------------------------------------------ helpers */
 
-export function flushAll() {
-  if (timer) { clearTimeout(timer); timer = null; }
-  for (const n of dirty) flush(n);
-  dirty.clear();
-}
-
-export const id = (prefix = '') =>
-  prefix + crypto.randomBytes(9).toString('base64url');
-
+export const id = (prefix = '') => prefix + crypto.randomBytes(9).toString('base64url');
 export const now = () => new Date().toISOString();
 
 function matches(row, where) {
@@ -73,7 +122,8 @@ function matches(row, where) {
   return true;
 }
 
-/** Collection handle with a minimal query API. */
+/* -------------------------------------------------------------- collections */
+
 export function table(name) {
   if (!COLLECTIONS.includes(name)) COLLECTIONS.push(name);
   return {
@@ -83,20 +133,22 @@ export function table(name) {
     findOne(where = {}) { return load(name).find(r => matches(r, where)) ?? null; },
     byId(rowId) { return load(name).find(r => r.id === rowId) ?? null; },
     count(where = {}) { return this.find(where).length; },
+
     insert(doc) {
       const rows = load(name);
       const row = { id: doc.id ?? id(), createdAt: now(), updatedAt: now(), ...doc };
       rows.push(row);
-      schedule(name);
+      persist({ collection: name, type: 'upsert', rows: [row] });
       return row;
     },
     insertMany(docs) { return docs.map(d => this.insert(d)); },
+
     update(rowId, patch) {
       const rows = load(name);
       const i = rows.findIndex(r => r.id === rowId);
       if (i === -1) return null;
       rows[i] = { ...rows[i], ...patch, id: rows[i].id, updatedAt: now() };
-      schedule(name);
+      persist({ collection: name, type: 'upsert', rows: [rows[i]] });
       return rows[i];
     },
     updateWhere(where, patch) {
@@ -104,12 +156,13 @@ export function table(name) {
       for (const row of this.find(where)) { this.update(row.id, patch); n++; }
       return n;
     },
+
     remove(rowId) {
       const rows = load(name);
       const i = rows.findIndex(r => r.id === rowId);
       if (i === -1) return false;
       rows.splice(i, 1);
-      schedule(name);
+      persist({ collection: name, type: 'delete', id: rowId });
       return true;
     },
     removeWhere(where) {
@@ -117,12 +170,25 @@ export function table(name) {
       for (const row of this.find(where)) { this.remove(row.id); n++; }
       return n;
     },
-    clear() { cache.set(name, []); schedule(name); }
+
+    clear() {
+      for (const row of [...load(name)]) this.remove(row.id);
+      cache.set(name, []);
+    }
   };
 }
 
 export const db = Object.fromEntries(COLLECTIONS.map(c => [c, table(c)]));
 
-process.on('exit', flushAll);
-process.on('SIGINT', () => { flushAll(); process.exit(0); });
-process.on('SIGTERM', () => { flushAll(); process.exit(0); });
+/* Best-effort durability on shutdown. The file backend flushes synchronously;
+   Supabase writes are already in flight, so we give them a moment to land. */
+const shutdown = signal => {
+  backend?.flushSync?.();
+  const done = () => process.exit(signal === 'exit' ? 0 : 0);
+  if (backend?.name === 'supabase') {
+    Promise.race([backend.flush(), new Promise(r => setTimeout(r, 2500))]).then(done);
+  } else if (signal !== 'exit') done();
+};
+process.on('exit', () => backend?.flushSync?.());
+process.on('SIGINT', () => shutdown('SIGINT'));
+process.on('SIGTERM', () => shutdown('SIGTERM'));

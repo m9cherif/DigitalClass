@@ -11,9 +11,12 @@
     "start": "node server/index.js",
     "dev": "node --watch server/index.js",
     "seed": "node server/seed.js",
-    "reset": "node server/seed.js --force"
+    "reset": "node server/seed.js --force",
+    "migrate": "node server/migrate-to-supabase.js",
+    "migrate:dry": "node server/migrate-to-supabase.js --dry"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.115.0",
     "bcryptjs": "^2.4.3",
     "cookie-parser": "^1.4.6",
     "dotenv": "^16.4.5",

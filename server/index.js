@@ -4,6 +4,7 @@ import path from 'node:path';
 import express from 'express';
 import cookieParser from 'cookie-parser';
 
+import { initStore, storeInfo } from './lib/db.js';
 import { attachUser } from './middleware/auth.js';
 import { attachRealtime } from './realtime.js';
 import authRoutes from './routes/auth.js';
@@ -41,7 +42,8 @@ app.use('/api/attempts', attemptRoutes);
 app.use('/api/social', socialRoutes);
 app.use('/api', adminRoutes);
 
-app.get('/api/health', (_req, res) => res.json({ ok: true, uptime: process.uptime() }));
+app.get('/api/health', (_req, res) =>
+  res.json({ ok: true, uptime: process.uptime(), store: storeInfo() }));
 
 app.use(express.static(PUBLIC, { extensions: ['html'] }));
 
@@ -62,7 +64,11 @@ const server = http.createServer(app);
 attachRealtime(server);
 
 const PORT = process.env.PORT || 3000;
+
+// Data must be in memory before the first request is served.
+const backend = await initStore();
+
 server.listen(PORT, () => {
   console.log(`\n  DigitalClass  →  http://localhost:${PORT}`);
-  console.log(`  env: ${process.env.NODE_ENV || 'development'}  ·  realtime: on\n`);
+  console.log(`  env: ${process.env.NODE_ENV || 'development'}  ·  realtime: on  ·  store: ${backend}\n`);
 });
