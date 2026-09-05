@@ -14,8 +14,8 @@
  *   DB_NAME | DB_DATABASE | MYSQL_DATABASE
  * or a single connection string in DATABASE_URL / MYSQL_URL.
  */
-import mysql from 'mysql2/promise';
-
+// The driver is imported lazily, inside the factory, so a deployment that does
+// not use MySQL never pays for loading it.
 const env = (...names) => {
   for (const n of names) if (process.env[n]) return String(process.env[n]).trim();
   return null;
@@ -83,7 +83,8 @@ const EXTRA_COLUMNS = {
 const MAX_RETRIES = 4;
 const CHUNK = 200;
 
-export function createMysqlBackend({ config = mysqlConfig(), log = console } = {}) {
+export async function createMysqlBackend({ config = mysqlConfig(), log = console } = {}) {
+  const { default: mysql } = await import('mysql2/promise');
   const pool = mysql.createPool({
     ...config,
     waitForConnections: true,

@@ -11,8 +11,9 @@
  *   SUPABASE_URL              | SUPABASE_PROJECT_URL | SUPABASE_API_URL
  *   SUPABASE_SERVICE_ROLE_KEY | SUPABASE_SERVICE_KEY | SUPABASE_KEY
  */
-import { createClient } from '@supabase/supabase-js';
-
+// The SDK is imported lazily, inside the factory: it declares Node >= 22, and
+// loading it on an older runtime would break boot even when this backend is
+// not the one in use.
 const env = (...names) => {
   for (const n of names) if (process.env[n]) return process.env[n].trim();
   return null;
@@ -30,7 +31,8 @@ export const tableName = c => c.replace(/[A-Z]/g, ch => '_' + ch.toLowerCase());
 const MAX_RETRIES = 4;
 const PAGE = 1000;
 
-export function createSupabaseBackend({ url = supabaseUrl(), key = supabaseKey(), log = console } = {}) {
+export async function createSupabaseBackend({ url = supabaseUrl(), key = supabaseKey(), log = console } = {}) {
+  const { createClient } = await import('@supabase/supabase-js');
   const client = createClient(url, key, {
     auth: { persistSession: false, autoRefreshToken: false },
     global: { headers: { 'x-application-name': 'digitalclass' } }

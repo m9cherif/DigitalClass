@@ -85,10 +85,10 @@ export async function initStore({ log = console } = {}) {
   let where = '';
   if (sql.isConfigured()) {
     const cfg = sql.mysqlConfig();
-    backend = sql.createMysqlBackend({ log });
+    backend = await sql.createMysqlBackend({ log });
     where = ` (${cfg.user}@${cfg.host}/${cfg.database})`;
   } else if (supa.isConfigured()) {
-    backend = supa.createSupabaseBackend({ log });
+    backend = await supa.createSupabaseBackend({ log });
     where = ` (${supa.supabaseUrl()})`;
   } else {
     backend = createFileBackend();
