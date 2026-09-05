@@ -2,7 +2,13 @@ import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import { db } from '../lib/db.js';
 
+// The fallback exists so `npm start` works out of the box locally. In
+// production it would be a hole: the value is public in this repository, so
+// anyone could mint an admin token. Refuse to boot instead.
 const SECRET = process.env.JWT_SECRET || 'dev-only-insecure-secret';
+if (!process.env.JWT_SECRET && process.env.NODE_ENV === 'production') {
+  throw new Error('JWT_SECRET must be set in production — refusing to start with the public development secret.');
+}
 const TTL = '30d';
 
 export const ROLES = ['admin', 'teacher', 'student', 'parent'];

@@ -1,8 +1,7 @@
 import { Router } from 'express';
-import path from 'node:path';
-import fs from 'node:fs';
 import multer from 'multer';
 import { db, flushAll, COLLECTIONS } from '../lib/db.js';
+import { UPLOAD_DIR } from '../lib/uploads.js';
 import { QUESTION_TYPES } from '../quiz/types.js';
 import { publicUser, requireAuth, requireRole, hashPassword, canEditCourse } from '../middleware/auth.js';
 import { listRooms } from '../lib/party.js';
@@ -174,8 +173,6 @@ router.get('/parties/history', requireAuth, (req, res) => {
 
 /* --------------------------------------------------------------- uploads */
 
-const UPLOAD_DIR = path.resolve('public/uploads');
-fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 const ALLOWED = /\.(png|jpe?g|gif|webp|svg|pdf|zip|txt|md|csv|json|js|py|c|cpp|java|sql)$/i;
 
 const upload = multer({

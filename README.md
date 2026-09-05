@@ -53,40 +53,65 @@ memory and is forwarded to the backend.
 
 | Backend | When it is used | Durability |
 |---|---|---|
-| **Supabase (Postgres)** | automatically, whenever `SUPABASE_URL` + a service key are in the environment | source of truth, nothing touches disk, survives redeploys |
+| **MySQL / MariaDB** | whenever `DB_USER` + `DB_NAME` (or `DATABASE_URL`) are in the environment | source of truth, nothing touches disk, survives redeploys |
+| **Supabase (Postgres)** | whenever `SUPABASE_URL` + a service key are set and MySQL is not | same |
 | **JSON files** | the zero-configuration fallback | `data/*.json`, fine for local development |
 
-Nothing else in the codebase changes between the two — routes, gamification and
+Nothing else in the codebase changes between them — routes, gamification and
 the realtime layer are unaware of which backend is live. `GET /api/health`
 reports the active backend, row counts and any pending/failed writes.
 
-### Pointing it at Supabase
+### Pointing it at MySQL (the shared-hosting database)
 
-1. Run `sql/001_initial_schema.sql` in the Supabase SQL editor (22 tables, one
-   per collection, plus indexes and RLS).
-2. Set these where your host keeps configuration — **no `.env` file needed**;
-   on Hostinger add them under the Node.js app's environment variables:
+Set these where your host keeps configuration — **no `.env` file needed**; on
+Hostinger they go under the Node.js app's environment variables:
 
-   ```
-   SUPABASE_URL=https://<project-ref>.supabase.co
-   SUPABASE_SERVICE_ROLE_KEY=<service_role key>
-   ```
+```
+DB_HOST=localhost          # the app and the database share a server
+DB_PORT=3306
+DB_USER=<db user>
+DB_PASSWORD=<db password>
+DB_NAME=<db name>
+```
 
-   `SUPABASE_PROJECT_URL` / `SUPABASE_SERVICE_KEY` / `SUPABASE_KEY` are also
-   accepted, so whatever name your host's integration injects will be picked up.
-3. Restart. The log line and `/api/health` will say `store: supabase`.
-4. Optional — copy existing local data up once: `npm run migrate`
-   (`npm run migrate:dry` previews it, `--wipe` replaces instead of merging).
+`MYSQL_HOST` / `MYSQL_USER` / … are accepted too, as is a single
+`DATABASE_URL=mysql://user:pass@host:3306/dbname`.
 
-Each table stores the document in a `data jsonb` column, with the
-frequently-filtered fields (email, role, course_id, …) exposed as **generated
-columns** so they are indexed and readable in the Supabase table editor without
-the application maintaining a field-by-field mapping.
+Restart and that is it: **the app creates its own schema on first boot** — one
+table per collection, `CREATE TABLE IF NOT EXISTS`, so deploying to an empty
+database just works and there is no migration step to forget. Each table holds
+the document in a `data JSON` column alongside `id`, `created_at` and
+`updated_at`. Where the server supports it, the frequently-filtered fields
+(email, role, course_id, …) are added as **generated columns** with indexes, so
+the data is browsable in phpMyAdmin without the app maintaining a
+field-by-field mapping; a server that rejects them simply gets the base table.
 
-**Security**: the server connects with the service-role key, so RLS is bypassed
-server-side. The schema enables RLS on every table and defines *no* policies,
-which means the anon/publishable key can read nothing. Keep it that way unless
+Verified against MariaDB 11.8 on Hostinger shared hosting: 22 tables created
+automatically, generated columns and indexes applied, Arabic content stored and
+queried correctly through `utf8mb4`.
+
+### Uploads
+
+Uploaded files default to `public/uploads`, which is inside the deployed
+directory and therefore erased by each release. Set `UPLOAD_DIR` to a path
+outside the deploy root to keep them:
+
+```
+UPLOAD_DIR=/home/<account>/persistent/uploads
+```
+
+The server warns on startup when running in production without it.
+
+### Pointing it at Supabase instead
+
+Run `sql/001_initial_schema.sql` in the SQL editor, then set `SUPABASE_URL` and
+`SUPABASE_SERVICE_ROLE_KEY`. The server connects with the service-role key, so
+RLS is bypassed server-side; the schema enables RLS everywhere with *no*
+policies, which means the anon key can read nothing. Keep it that way unless
 you deliberately want browsers talking to the database directly.
+
+`npm run migrate` copies an existing `data/*.json` store into Supabase
+(`npm run migrate:dry` previews, `--wipe` replaces instead of merging).
 
 **Scope**: because the whole dataset is held in memory, this design assumes a
 single app instance — the same assumption the Socket.IO party and live-class
@@ -131,6 +156,7 @@ server/
   migrate-to-supabase.js   One-shot copy of data/*.json into Postgres
   lib/
     db.js            In-memory store + pluggable durable backend
+    mysql.js         MySQL/MariaDB backend: self-creating schema, write queue
     supabase.js      Supabase backend: hydrate, ordered write queue, retry
     gamification.js  XP, levels, streaks, badges
     party.js         Live party room state machine

@@ -5,6 +5,7 @@ import express from 'express';
 import cookieParser from 'cookie-parser';
 
 import { initStore, storeInfo } from './lib/db.js';
+import { UPLOAD_DIR, uploadsAreEphemeral } from './lib/uploads.js';
 import { attachUser } from './middleware/auth.js';
 import { attachRealtime } from './realtime.js';
 import authRoutes from './routes/auth.js';
@@ -23,13 +24,22 @@ app.use(cookieParser());
 
 // Small in-memory rate limiter — enough to blunt brute-force login attempts.
 const hits = new Map();
+const WINDOW = 60_000;
+// Without this sweep the map grows one entry per client IP, forever.
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, rec] of hits) if (now > rec.reset) hits.delete(key);
+}, WINDOW).unref();
+
 app.use('/api', (req, res, next) => {
-  const key = `${req.ip}:${req.path.startsWith('/auth/login') ? 'login' : 'api'}`;
-  const limit = key.endsWith('login') ? 20 : 600;
-  const window = 60_000;
+  const login = req.path.startsWith('/auth/login') || req.path.startsWith('/auth/register');
+  const key = `${req.ip}:${login ? 'auth' : 'api'}`;
+  const limit = login ? 20 : 600;
   const rec = hits.get(key);
-  if (!rec || Date.now() > rec.reset) hits.set(key, { n: 1, reset: Date.now() + window });
-  else if (++rec.n > limit) return res.status(429).json({ error: 'rate_limited', retryInSec: Math.ceil((rec.reset - Date.now()) / 1000) });
+  if (!rec || Date.now() > rec.reset) hits.set(key, { n: 1, reset: Date.now() + WINDOW });
+  else if (++rec.n > limit) {
+    return res.status(429).json({ error: 'rate_limited', retryInSec: Math.ceil((rec.reset - Date.now()) / 1000) });
+  }
   next();
 });
 
@@ -42,9 +52,20 @@ app.use('/api/attempts', attemptRoutes);
 app.use('/api/social', socialRoutes);
 app.use('/api', adminRoutes);
 
-app.get('/api/health', (_req, res) =>
-  res.json({ ok: true, uptime: process.uptime(), store: storeInfo() }));
+/** Public enough for an uptime probe; row counts are for admins only. */
+app.get('/api/health', (req, res) => {
+  const info = storeInfo();
+  res.json({
+    ok: true,
+    uptime: Math.round(process.uptime()),
+    store: req.user?.role === 'admin'
+      ? info
+      : { backend: info.backend, ready: info.ready, pending: info.pending }
+  });
+});
 
+// Served explicitly, because UPLOAD_DIR may point outside the deploy root.
+app.use('/uploads', express.static(UPLOAD_DIR, { maxAge: '7d', index: false }));
 app.use(express.static(PUBLIC, { extensions: ['html'] }));
 
 app.use('/api', (_req, res) => res.status(404).json({ error: 'no_such_endpoint' }));
@@ -70,5 +91,9 @@ const backend = await initStore();
 
 server.listen(PORT, () => {
   console.log(`\n  DigitalClass  →  http://localhost:${PORT}`);
-  console.log(`  env: ${process.env.NODE_ENV || 'development'}  ·  realtime: on  ·  store: ${backend}\n`);
+  console.log(`  env: ${process.env.NODE_ENV || 'development'}  ·  realtime: on  ·  store: ${backend}`);
+  if (uploadsAreEphemeral && process.env.NODE_ENV === 'production') {
+    console.warn(`  ! uploads are in ${UPLOAD_DIR}, inside the deploy directory — set UPLOAD_DIR to keep them across releases`);
+  }
+  console.log('');
 });

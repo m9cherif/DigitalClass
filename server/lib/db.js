@@ -17,7 +17,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import { isConfigured, createSupabaseBackend, supabaseUrl } from './supabase.js';
+import * as supa from './supabase.js';
+import * as sql from './mysql.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const DATA_DIR = path.join(ROOT, 'data');
@@ -76,14 +77,28 @@ function createFileBackend() {
 
 /* ---------------------------------------------------------------- lifecycle */
 
-/** Choose a backend and load every collection into memory. */
+/**
+ * Choose a backend and load every collection into memory.
+ * MySQL wins when configured, then Supabase, then local files.
+ */
 export async function initStore({ log = console } = {}) {
-  backend = isConfigured() ? createSupabaseBackend({ log }) : createFileBackend();
+  let where = '';
+  if (sql.isConfigured()) {
+    const cfg = sql.mysqlConfig();
+    backend = sql.createMysqlBackend({ log });
+    where = ` (${cfg.user}@${cfg.host}/${cfg.database})`;
+  } else if (supa.isConfigured()) {
+    backend = supa.createSupabaseBackend({ log });
+    where = ` (${supa.supabaseUrl()})`;
+  } else {
+    backend = createFileBackend();
+  }
+
   const loaded = await backend.hydrate(COLLECTIONS);
   for (const c of COLLECTIONS) cache.set(c, loaded[c] ?? []);
   ready = true;
   const total = COLLECTIONS.reduce((n, c) => n + cache.get(c).length, 0);
-  log.log?.(`  store: ${backend.name}${backend.name === 'supabase' ? ` (${supabaseUrl()})` : ''} · ${total} rows`);
+  log.log?.(`  store: ${backend.name}${where} · ${total} rows`);
   return backend.name;
 }
 
@@ -182,13 +197,13 @@ export const db = Object.fromEntries(COLLECTIONS.map(c => [c, table(c)]));
 
 /* Best-effort durability on shutdown. The file backend flushes synchronously;
    Supabase writes are already in flight, so we give them a moment to land. */
-const shutdown = signal => {
+const shutdown = () => {
   backend?.flushSync?.();
-  const done = () => process.exit(signal === 'exit' ? 0 : 0);
-  if (backend?.name === 'supabase') {
-    Promise.race([backend.flush(), new Promise(r => setTimeout(r, 2500))]).then(done);
-  } else if (signal !== 'exit') done();
+  const done = () => process.exit(0);
+  if (backend?.name === 'files') return done();
+  // Give in-flight remote writes a moment to land before exiting.
+  Promise.race([backend.flush(), new Promise(r => setTimeout(r, 2500))]).then(done, done);
 };
 process.on('exit', () => backend?.flushSync?.());
-process.on('SIGINT', () => shutdown('SIGINT'));
-process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', shutdown);
+process.on('SIGTERM', shutdown);
