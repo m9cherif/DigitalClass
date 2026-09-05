@@ -147,7 +147,7 @@ export async function dashboardView(_p, out) {
               <div style="font-weight:600">${esc(c.title)}</div>
               ${isTeacher
                 ? `<div class="tiny muted">${c.students} ${t('course.students')} · ${c.quizzes} ${t('course.quizzes')} ${
-                     c.status !== 'published' ? '· <span class="badge badge-warning">draft</span>' : ''}</div>`
+                     c.status !== 'published' ? `· <span class="badge badge-warning">${t('common.draft')}</span>` : ''}</div>`
                 : `<div class="progress mt" style="inline-size:170px"><i style="inline-size:${c.percent}%"></i></div>`}
             </span>
             ${!isTeacher ? `<span class="badge">${c.percent}%</span>` : ''}
@@ -335,7 +335,7 @@ export async function coursesView(_p, out) {
         <div class="between mt">
           <span class="small">${t('course.by')} ${esc(c.teacher?.name || '')}</span>
           ${c.enrolled ? `<span class="badge badge-success">${t('course.enrolled')}</span>` : ''}
-          ${c.status !== 'published' ? `<span class="badge badge-warning">draft</span>` : ''}
+          ${c.status !== 'published' ? `<span class="badge badge-warning">${t('common.draft')}</span>` : ''}
         </div>
       </a>`).join('') : `<div class="empty-state"><span class="ic">📭</span>${t('common.empty')}</div>`;
   };
@@ -393,7 +393,7 @@ export async function courseView({ id }, out) {
           <div class="row mb">
             <span class="badge badge-primary">${t('topic.' + course.topic)}</span>
             <span class="badge">${t('course.level.' + course.level)}</span>
-            ${course.status !== 'published' ? `<span class="badge badge-warning">draft</span>` : ''}
+            ${course.status !== 'published' ? `<span class="badge badge-warning">${t('common.draft')}</span>` : ''}
           </div>
           <h1>${esc(title(course))}</h1>
           <p class="muted">${esc(desc(course))}</p>
@@ -482,7 +482,7 @@ export async function courseView({ id }, out) {
           <div class="row tiny muted mb">
             <span>${t('quiz.difficulty')}: ${esc(q.difficulty)}</span>
             <span>${q.timeLimitSec ? Math.round(q.timeLimitSec / 60) + ' ' + t('common.minutes') : t('quiz.noTimeLimit')}</span>
-            ${!q.published ? `<span class="badge badge-warning">draft</span>` : ''}
+            ${!q.published ? `<span class="badge badge-warning">${t('common.draft')}</span>` : ''}
           </div>
           <div class="row">
             <a class="btn btn-primary btn-sm" href="/quiz/${q.id}">${t('quiz.start')}</a>
@@ -554,8 +554,8 @@ export async function courseView({ id }, out) {
     <div class="field"><label>Title</label><input id="ti" value="${esc(course.title)}"></div>
     <div class="field"><label>Description</label><textarea id="de">${esc(course.description)}</textarea></div>
     <div class="field"><label>Status</label>
-      <select id="st"><option value="draft" ${course.status === 'draft' ? 'selected' : ''}>draft</option>
-        <option value="published" ${course.status === 'published' ? 'selected' : ''}>published</option></select></div>
+      <select id="st"><option value="draft" ${course.status === 'draft' ? 'selected' : ''}>${t('common.draft')}</option>
+        <option value="published" ${course.status === 'published' ? 'selected' : ''}>${t('common.published')}</option></select></div>
     <button class="btn btn-primary" id="sv">${t('common.save')}</button>`,
     { onMount: (root, close) => root.querySelector('#sv').onclick = async () => {
         await api.patch(`/courses/${id}`, {

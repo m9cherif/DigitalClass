@@ -49,6 +49,8 @@
   "common.minutes": "د",
   "common.of": "من",
   "common.all": "الكل",
+  "common.draft": "مسودة",
+  "common.published": "منشور",
   "common.error": "حدث خطأ ما.",
   "dash.welcome": "مرحبًا، {name}",
   "dash.level": "المستوى",

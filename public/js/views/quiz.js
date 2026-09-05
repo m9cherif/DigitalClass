@@ -22,7 +22,7 @@ export async function quizView({ id }, out) {
           <div class="row mb">
             <span class="badge badge-primary">${esc(q.kind)}</span>
             <span class="badge">${t('quiz.difficulty')}: ${esc(q.difficulty)}</span>
-            ${q.published ? '' : `<span class="badge badge-warning">draft</span>`}
+            ${q.published ? '' : `<span class="badge badge-warning">${t('common.draft')}</span>`}
           </div>
           <h1>${esc(i18n.pick(q, 'title', q.title))}</h1>
           <p class="muted">${esc(q.description || '')}</p>

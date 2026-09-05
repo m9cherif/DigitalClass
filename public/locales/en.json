@@ -49,6 +49,8 @@
   "common.minutes": "min",
   "common.of": "of",
   "common.all": "All",
+  "common.draft": "Draft",
+  "common.published": "Published",
   "common.error": "Something went wrong.",
   "dash.welcome": "Hello, {name}",
   "dash.level": "Level",

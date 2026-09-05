@@ -49,6 +49,8 @@
   "common.minutes": "min",
   "common.of": "sur",
   "common.all": "Tous",
+  "common.draft": "Brouillon",
+  "common.published": "Publié",
   "common.error": "Une erreur est survenue.",
   "dash.welcome": "Bonjour, {name}",
   "dash.level": "Niveau",
