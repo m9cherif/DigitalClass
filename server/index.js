@@ -43,6 +43,22 @@ app.use('/api', (req, res, next) => {
   next();
 });
 
+/**
+ * The store hydrates asynchronously, but the HTTP server must start listening
+ * immediately: Phusion Passenger (and most process managers) decide the app is
+ * dead if nothing is listening shortly after load. So requests that need data
+ * wait here instead, and the socket is open from the first tick.
+ */
+let storeReady = null;
+app.use('/api', async (req, res, next) => {
+  try {
+    await storeReady;
+    next();
+  } catch (err) {
+    res.status(503).json({ error: 'store_unavailable', message: err.message });
+  }
+});
+
 app.use(attachUser);
 
 app.use('/api/auth', authRoutes);
@@ -86,12 +102,20 @@ attachRealtime(server);
 
 const PORT = process.env.PORT || 3000;
 
-// Data must be in memory before the first request is served.
-const backend = await initStore();
+// No top-level await here on purpose — it would make this module's evaluation
+// return a pending promise, and a loader that does not await it (Passenger)
+// would conclude the app never started.
+storeReady = initStore().then(backend => {
+  console.log(`  store: ${backend} ready`);
+  return backend;
+}, err => {
+  console.error('[store] failed to initialise:', err.message);
+  throw err;
+});
 
 server.listen(PORT, () => {
   console.log(`\n  DigitalClass  →  http://localhost:${PORT}`);
-  console.log(`  env: ${process.env.NODE_ENV || 'development'}  ·  realtime: on  ·  store: ${backend}`);
+  console.log(`  env: ${process.env.NODE_ENV || 'development'}  ·  realtime: on`);
   if (uploadsAreEphemeral && process.env.NODE_ENV === 'production') {
     console.warn(`  ! uploads are in ${UPLOAD_DIR}, inside the deploy directory — set UPLOAD_DIR to keep them across releases`);
   }

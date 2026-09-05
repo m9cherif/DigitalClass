@@ -34,6 +34,11 @@ const cache = new Map();
 let backend = null;
 let ready = false;
 
+/** Resolves once initStore() has finished; awaited by anything that runs
+ *  before boot completes (Socket.IO handshakes, early requests). */
+let markReady;
+export const whenReady = new Promise(resolve => { markReady = resolve; });
+
 /* ------------------------------------------------------------ file backend */
 
 function createFileBackend() {
@@ -97,6 +102,7 @@ export async function initStore({ log = console } = {}) {
   const loaded = await backend.hydrate(COLLECTIONS);
   for (const c of COLLECTIONS) cache.set(c, loaded[c] ?? []);
   ready = true;
+  markReady();
   const total = COLLECTIONS.reduce((n, c) => n + cache.get(c).length, 0);
   log.log?.(`  store: ${backend.name}${where} · ${total} rows`);
   return backend.name;

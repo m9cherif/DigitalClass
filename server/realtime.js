@@ -2,7 +2,7 @@
  * Socket.IO layer: live quiz parties, live A/V rooms, course chat and presence.
  */
 import { Server } from 'socket.io';
-import { db, now } from './lib/db.js';
+import { db, now, whenReady } from './lib/db.js';
 import { verifyToken } from './middleware/auth.js';
 import {
   createRoom, getRoom, joinRoom, leaveRoom, publicRoom, standings,
@@ -13,7 +13,10 @@ import * as Live from './lib/live.js';
 export function attachRealtime(httpServer) {
   const io = new Server(httpServer, { cors: { origin: true, credentials: true } });
 
-  io.use((socket, next) => {
+  io.use(async (socket, next) => {
+    // A client can connect before the store has hydrated; wait rather than
+    // rejecting the handshake.
+    await whenReady;
     const payload = verifyToken(socket.handshake.auth?.token);
     const user = payload ? db.users.byId(payload.sub) : null;
     if (!user) return next(new Error('unauthenticated'));
