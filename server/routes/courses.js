@@ -29,15 +29,18 @@ function ensureCode(course) {
 /** Course catalogue with search, topic filter and localisation-aware fields. */
 router.get('/', (req, res) => {
   const { q = '', topic, level, teacherId, mine } = req.query;
-  let rows = db.courses.all()
-    .filter(c => c.status === 'published' || (req.user && canEditCourse(req.user, c)));
+  const myCourseIds = new Set(req.user
+    ? db.enrollments.find({ userId: req.user.id, status: 'active' }).map(e => e.courseId)
+    : []);
+
+  // Drafts stay out of the public catalogue, but remain visible to their
+  // teacher and to students who already joined them with a code.
+  let rows = db.courses.all().filter(c =>
+    c.status === 'published' || myCourseIds.has(c.id) || (req.user && canEditCourse(req.user, c)));
   if (topic) rows = rows.filter(c => c.topic === topic);
   if (level) rows = rows.filter(c => c.level === level);
   if (teacherId) rows = rows.filter(c => c.teacherId === teacherId);
-  if (mine === '1' && req.user) {
-    const ids = new Set(db.enrollments.find({ userId: req.user.id, status: 'active' }).map(e => e.courseId));
-    rows = rows.filter(c => ids.has(c.id));
-  }
+  if (mine === '1' && req.user) rows = rows.filter(c => myCourseIds.has(c.id));
   if (q) {
     const needle = String(q).toLowerCase();
     rows = rows.filter(c => JSON.stringify([c.title, c.description, c.tags]).toLowerCase().includes(needle));
@@ -65,10 +68,16 @@ router.get('/topics', (_req, res) => {
 router.get('/:id', (req, res) => {
   const course = db.courses.byId(req.params.id);
   if (!course) return res.status(404).json({ error: 'not_found' });
-  const editable = canEditCourse(req.user, course);
-  if (course.status !== 'published' && !editable) return res.status(403).json({ error: 'forbidden' });
 
+  const editable = canEditCourse(req.user, course);
   const enrolled = req.user ? isEnrolled(req.user.id, course.id) : false;
+  // A draft is hidden from the catalogue, but a student who joined it with the
+  // teacher's code is a member and must be able to open it — the code is the
+  // invitation, so refusing here would strand them on a 403 right after joining.
+  if (course.status !== 'published' && !editable && !enrolled) {
+    return res.status(403).json({ error: 'forbidden' });
+  }
+
   const enrollment = req.user ? db.enrollments.findOne({ userId: req.user.id, courseId: course.id }) : null;
   const lessons = db.lessons.find({ courseId: course.id }).sort((a, b) => a.order - b.order);
 
