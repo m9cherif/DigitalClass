@@ -50,7 +50,8 @@ export async function partyView({ classId } = {}, out) {
                 <input id="secs" type="number" value="30" min="5" max="180"></div>
             </div>
             <button class="btn btn-primary btn-block" id="host">${t('party.host')}</button>`
-            : `<div class="muted small">${t(classId ? 'party.noClassQuizzes' : 'party.noQuizzes')}</div>`}`
+            : `<div class="muted small mb">${t(classId ? 'party.noClassQuizzes' : 'party.noQuizzes')}</div>
+               <a class="btn btn-sm" href="${classId ? `/classes/${classId}` : '/courses/new'}">+ ${t('course.newCourse')}</a>`}`
           : `<div class="muted small">${t('party.waiting')}</div>`}
       </div>
     </div>
