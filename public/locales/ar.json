@@ -345,5 +345,13 @@
   "build.markers": "النقاط المطلوب تسميتها",
   "build.markersHint": "انقر على الصورة لوضع نقطة، ثم اختر تسميتها الصحيحة.",
   "build.pickCorrectLabel": "اختر التسمية الصحيحة…",
-  "build.clickToAddMarker": "انقر على الصورة لوضع نقطة."
+  "build.clickToAddMarker": "انقر على الصورة لوضع نقطة.",
+  "assignment.notSubmitted": "لم يُسلَّم بعد",
+  "assignment.submitted": "تم التسليم",
+  "assignment.late": "متأخر",
+  "assignment.graded": "تم التصحيح",
+  "assignment.grade": "العلامة",
+  "assignment.files": "مرفق",
+  "assignment.feedbackPlaceholder": "ملاحظة للتلميذ (اختياري)",
+  "assignment.saveGrade": "حفظ العلامة"
 }

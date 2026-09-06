@@ -345,5 +345,13 @@
   "build.markers": "Points à annoter",
   "build.markersHint": "Cliquez sur l'image pour poser un point, puis choisissez sa bonne étiquette.",
   "build.pickCorrectLabel": "Choisir la bonne étiquette…",
-  "build.clickToAddMarker": "Cliquez sur l'image pour poser un point."
+  "build.clickToAddMarker": "Cliquez sur l'image pour poser un point.",
+  "assignment.notSubmitted": "Pas encore rendu",
+  "assignment.submitted": "Rendu",
+  "assignment.late": "En retard",
+  "assignment.graded": "Corrigé",
+  "assignment.grade": "Note",
+  "assignment.files": "Pièce jointe",
+  "assignment.feedbackPlaceholder": "Commentaire pour l'élève (facultatif)",
+  "assignment.saveGrade": "Enregistrer la note"
 }

@@ -345,5 +345,13 @@
   "build.markers": "Points to label",
   "build.markersHint": "Click the image to drop a point, then choose its correct label.",
   "build.pickCorrectLabel": "Pick the correct label…",
-  "build.clickToAddMarker": "Click the image to drop a point."
+  "build.clickToAddMarker": "Click the image to drop a point.",
+  "assignment.notSubmitted": "Not submitted yet",
+  "assignment.submitted": "Submitted",
+  "assignment.late": "Late",
+  "assignment.graded": "Graded",
+  "assignment.grade": "Grade",
+  "assignment.files": "Attachment",
+  "assignment.feedbackPlaceholder": "Feedback for the student (optional)",
+  "assignment.saveGrade": "Save grade"
 }

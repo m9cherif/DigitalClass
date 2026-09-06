@@ -190,6 +190,7 @@ router.add('/courses/new', Learn.courseNewView, { roles: ['teacher', 'admin'] })
 router.add('/courses/:id', Learn.courseView);
 router.add('/courses/:id/roster', Learn.rosterView, { roles: ['teacher', 'admin'] });
 router.add('/courses/:id/lessons/:lessonId', Learn.lessonView);
+router.add('/assignments/:id', Learn.assignmentGradeView);
 router.add('/children/:id', Learn.childReportView, { roles: ['parent', 'admin'] });
 
 router.add('/quiz/:id', Quiz.quizView);

@@ -718,6 +718,83 @@ export async function lessonView({ id, lessonId }, out) {
   });
 }
 
+/** Teacher grading page for one assignment: the whole class roster, each row
+ *  showing what the student turned in (or didn't) with a grade + feedback box. */
+export async function assignmentGradeView({ id }, out) {
+  const data = await api.get(`/courses/assignments/${id}`);
+  const a = data.assignment;
+
+  if (!data.editable) {
+    // A student who follows their own submission link sees a read-only recap.
+    const s = data.mySubmission;
+    out.innerHTML = `
+      <a href="/courses/${a.course.id}" class="small">← ${esc(a.course.title)}</a>
+      <h1 class="mt">${esc(a.title)}</h1>
+      <p class="muted">${esc(a.brief || '')}</p>
+      ${s ? `
+        <div class="card mt">
+          <div class="between mb">
+            <span class="badge badge-${s.status === 'graded' ? 'success' : 'primary'}">${
+              s.status === 'graded' ? t('assignment.graded') : t('assignment.submitted')}</span>
+            ${s.late ? `<span class="badge badge-warning">${t('assignment.late')}</span>` : ''}
+          </div>
+          ${s.text ? `<div class="card small" style="white-space:pre-wrap;background:var(--surface-2)">${esc(s.text)}</div>` : ''}
+          ${s.code ? `<pre class="mt">${esc(s.code)}</pre>` : ''}
+          ${s.grade != null ? `<div class="mt"><strong>${t('assignment.grade')}:</strong> ${s.grade}/${a.points}</div>` : ''}
+          ${s.feedback ? `<div class="card mt small" style="background:var(--surface-2)">${esc(s.feedback)}</div>` : ''}
+        </div>` : `<div class="empty-state mt">${t('assignment.notSubmitted')}</div>`}`;
+    return;
+  }
+
+  const rows = data.submissions;
+  out.innerHTML = `
+    <a href="/courses/${a.course.id}" class="small">← ${esc(a.course.title)}</a>
+    <div class="between mt mb">
+      <div>
+        <h1>${esc(a.title)}</h1>
+        <p class="muted">${esc(a.brief || '')}</p>
+      </div>
+      <div class="stack" style="text-align:end">
+        ${a.dueAt ? `<span class="badge badge-warning">${i18n.date(a.dueAt)}</span>` : ''}
+        <span class="tiny muted">${a.points} ${t('common.points')}</span>
+      </div>
+    </div>
+    <div class="stack">${rows.map(({ student, submission: s }) => `
+      <div class="card">
+        <div class="between mb">
+          <span class="row">${avatar(student)} <strong>${esc(student.name)}</strong></span>
+          <span class="row">
+            ${!s ? `<span class="badge">${t('assignment.notSubmitted')}</span>`
+              : `<span class="badge badge-${s.status === 'graded' ? 'success' : 'primary'}">${
+                  s.status === 'graded' ? t('assignment.graded') : t('assignment.submitted')}</span>
+                 ${s.late ? `<span class="badge badge-warning">${t('assignment.late')}</span>` : ''}
+                 <span class="tiny muted">${i18n.date(s.submittedAt, { dateStyle: 'short', timeStyle: 'short' })}</span>`}
+          </span>
+        </div>
+        ${s ? `
+          ${s.text ? `<div class="card small mb" style="white-space:pre-wrap;background:var(--surface-2)">${esc(s.text)}</div>` : ''}
+          ${s.code ? `<pre class="mb">${esc(s.code)}</pre>` : ''}
+          ${s.files?.length ? `<div class="row mb">${s.files.map(f =>
+            `<a class="btn btn-sm" href="${esc(f.url)}" target="_blank" rel="noopener">📎 ${esc(f.name || t('assignment.files'))}</a>`).join('')}</div>` : ''}
+          <div class="row">
+            <input type="number" min="0" max="${a.points}" placeholder="0-${a.points}"
+                   value="${s.grade ?? ''}" data-grade-input="${s.id}" style="inline-size:110px">
+            <input placeholder="${t('assignment.feedbackPlaceholder')}" value="${esc(s.feedback || '')}"
+                   data-feedback-input="${s.id}" style="flex:1">
+            <button class="btn btn-primary btn-sm" data-save-grade="${s.id}">${t('assignment.saveGrade')}</button>
+          </div>` : `<div class="tiny muted">${t('assignment.notSubmitted')}</div>`}
+      </div>`).join('') || `<div class="empty-state">${t('common.empty')}</div>`}</div>`;
+
+  out.querySelectorAll('[data-save-grade]').forEach(btn => btn.onclick = async () => {
+    const sid = btn.dataset.saveGrade;
+    const grade = Number(out.querySelector(`[data-grade-input="${sid}"]`).value || 0);
+    const feedback = out.querySelector(`[data-feedback-input="${sid}"]`).value;
+    await api.post(`/courses/submissions/${sid}/grade`, { grade, feedback });
+    toast('✅ ' + t('assignment.saveGrade'), 'success');
+    router.resolve();
+  });
+}
+
 export async function rosterView({ id }, out) {
   const { roster } = await api.get(`/courses/${id}/roster`);
   out.innerHTML = `

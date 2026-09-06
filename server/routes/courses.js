@@ -317,6 +317,36 @@ router.post('/assignments/:id/submit', requireRole('student'), (req, res) => {
   res.json({ submission });
 });
 
+/** A single assignment, with the class roster's submission status folded in
+ *  so the grading page has everything in one request. */
+router.get('/assignments/:id', requireAuth, (req, res) => {
+  const assignment = db.assignments.byId(req.params.id);
+  if (!assignment) return res.status(404).json({ error: 'not_found' });
+  const course = db.courses.byId(assignment.courseId);
+  if (!course) return res.status(404).json({ error: 'not_found' });
+
+  const editable = canEditCourse(req.user, course);
+  const mine = req.user ? db.submissions.findOne({ assignmentId: assignment.id, userId: req.user.id }) : null;
+  if (!editable && !mine && !isEnrolled(req.user?.id, course.id)) {
+    return res.status(403).json({ error: 'forbidden' });
+  }
+
+  const payload = { assignment: { ...assignment, course: { id: course.id, title: course.title } }, editable };
+  if (editable) {
+    const roster = db.enrollments.find({ courseId: course.id, status: 'active' });
+    payload.submissions = roster.map(e => {
+      const submission = db.submissions.findOne({ assignmentId: assignment.id, userId: e.userId });
+      return {
+        student: publicUser(db.users.byId(e.userId)),
+        submission: submission || null
+      };
+    });
+  } else {
+    payload.mySubmission = mine || null;
+  }
+  res.json(payload);
+});
+
 router.get('/assignments/:id/submissions', requireAuth, (req, res) => {
   const assignment = db.assignments.byId(req.params.id);
   if (!assignment) return res.status(404).json({ error: 'not_found' });
