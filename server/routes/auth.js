@@ -1,6 +1,8 @@
 import { Router } from 'express';
-import { db } from '../lib/db.js';
+import crypto from 'node:crypto';
+import { db, now } from '../lib/db.js';
 import { progress } from '../lib/gamification.js';
+import { sendMail } from '../lib/mail.js';
 import {
   ROLES, hashPassword, checkPassword, signToken, publicUser, requireAuth, requireRole
 } from '../middleware/auth.js';
@@ -8,7 +10,29 @@ import {
 const router = Router();
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-router.post('/register', (req, res) => {
+const OTP_TTL_MS = 10 * 60 * 1000;
+const OTP_RESEND_COOLDOWN_MS = 60 * 1000;
+const OTP_MAX_ATTEMPTS = 5;
+
+const newOtp = () => String(crypto.randomInt(0, 1_000_000)).padStart(6, '0');
+
+async function issueAndSendOtp(user) {
+  const code = newOtp();
+  db.users.update(user.id, {
+    otpHash: hashPassword(code), otpExpiresAt: Date.now() + OTP_TTL_MS,
+    otpAttempts: 0, otpSentAt: Date.now()
+  });
+  await sendMail({
+    to: user.email,
+    subject: 'DigitalClass — your verification code',
+    text: `Your DigitalClass verification code is ${code}. It expires in 10 minutes.`,
+    html: `<p>Your DigitalClass verification code is:</p><p style="font-size:28px;font-weight:700;letter-spacing:4px">${code}</p><p>It expires in 10 minutes.</p>`
+  });
+  // So a local/staging run never depends on inbox access to test the flow.
+  if (process.env.NODE_ENV !== 'production') console.log(`[otp] ${user.email} -> ${code}`);
+}
+
+router.post('/register', async (req, res) => {
   const { name, email, password, role = 'student', lang = 'fr' } = req.body || {};
   if (!name || !EMAIL_RE.test(email || '')) return res.status(400).json({ error: 'invalid_email_or_name' });
   if (!password || password.length < 8) return res.status(400).json({ error: 'weak_password', min: 8 });
@@ -25,11 +49,12 @@ router.post('/register', (req, res) => {
     name: String(name).slice(0, 80),
     email: email.toLowerCase(),
     password: hashPassword(password),
-    role, lang, status: 'active',
+    role, lang, status: 'active', emailVerified: false,
     avatar: null, bio: '', xp: 0, level: 1, streak: 0, longestStreak: 0,
     childIds: [], theme: 'dark'
   });
-  res.status(201).json({ token: signToken(user), user: publicUser(user) });
+  await issueAndSendOtp(user);
+  res.status(201).json({ pendingVerification: true, userId: user.id, email: user.email });
 });
 
 router.post('/login', (req, res) => {
@@ -39,8 +64,47 @@ router.post('/login', (req, res) => {
     return res.status(401).json({ error: 'bad_credentials' });
   }
   if (user.status === 'suspended') return res.status(403).json({ error: 'account_suspended' });
+  // Rows created before email verification existed have no emailVerified
+  // field at all — undefined is treated as verified, so nobody who already
+  // had an account is retroactively locked out by this requirement.
+  if (user.emailVerified === false) {
+    return res.status(403).json({ error: 'email_not_verified', userId: user.id, email: user.email });
+  }
   db.users.update(user.id, { lastLoginAt: new Date().toISOString() });
   res.json({ token: signToken(user), user: publicUser(user) });
+});
+
+/** Completes registration: the OTP just emailed is the only thing standing
+ *  between an unverified account and a real session. */
+router.post('/verify-email', async (req, res) => {
+  const { userId, code } = req.body || {};
+  const user = db.users.byId(String(userId || ''));
+  if (!user || user.emailVerified !== false) return res.status(400).json({ error: 'invalid_verification' });
+  if (!user.otpExpiresAt || Date.now() > user.otpExpiresAt) return res.status(400).json({ error: 'otp_expired' });
+  if ((user.otpAttempts || 0) >= OTP_MAX_ATTEMPTS) return res.status(429).json({ error: 'too_many_attempts' });
+
+  if (!checkPassword(String(code || ''), user.otpHash)) {
+    db.users.update(user.id, { otpAttempts: (user.otpAttempts || 0) + 1 });
+    return res.status(400).json({ error: 'invalid_code' });
+  }
+
+  const verified = db.users.update(user.id, {
+    emailVerified: true, otpHash: null, otpExpiresAt: null, otpAttempts: 0,
+    lastLoginAt: now()
+  });
+  res.json({ token: signToken(verified), user: publicUser(verified) });
+});
+
+router.post('/resend-otp', async (req, res) => {
+  const user = db.users.byId(String(req.body?.userId || ''));
+  if (!user || user.emailVerified !== false) return res.status(400).json({ error: 'invalid_verification' });
+  if (user.otpSentAt && Date.now() - user.otpSentAt < OTP_RESEND_COOLDOWN_MS) {
+    return res.status(429).json({
+      error: 'otp_cooldown', retryInSec: Math.ceil((OTP_RESEND_COOLDOWN_MS - (Date.now() - user.otpSentAt)) / 1000)
+    });
+  }
+  await issueAndSendOtp(user);
+  res.json({ ok: true });
 });
 
 router.get('/me', requireAuth, (req, res) => {

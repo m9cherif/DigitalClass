@@ -129,12 +129,22 @@ export const session = {
     return r.user;
   },
 
+  /** Returns { pendingVerification, userId, email } — no session yet until
+   *  the emailed code is confirmed via verifyEmail(). */
   async register(payload) {
-    const r = await api.post('/auth/register', { ...payload, lang: i18n.lang });
+    return api.post('/auth/register', { ...payload, lang: i18n.lang });
+  },
+
+  async verifyEmail(userId, code) {
+    const r = await api.post('/auth/verify-email', { userId, code });
     api.setToken(r.token);
     await this.refresh();
     connectSocket();
     return r.user;
+  },
+
+  resendOtp(userId) {
+    return api.post('/auth/resend-otp', { userId });
   },
 
   logout() {

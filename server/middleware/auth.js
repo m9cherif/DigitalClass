@@ -26,7 +26,7 @@ export function verifyToken(token) {
 /** Strips password hashes and other internals before a user leaves the API. */
 export function publicUser(u) {
   if (!u) return null;
-  const { password, resetToken, ...rest } = u;
+  const { password, resetToken, otpHash, otpExpiresAt, otpAttempts, ...rest } = u;
   return rest;
 }
 

@@ -20,32 +20,11 @@ export function authView(mode) {
           </div>
           <p class="muted small mt">${t('app.tagline')}</p>
         </div>
-        <div class="card">
-          <div class="row mb">
-            ${Object.entries(LANGS).map(([code, label]) =>
-              `<button class="chip ${i18n.lang === code ? 'selected' : ''}" data-lang="${code}">${label}</button>`).join('')}
-          </div>
-          <h2>${t(isLogin ? 'auth.login' : 'auth.register')}</h2>
-          <form id="authForm">
-            ${isLogin ? '' : `
-              <div class="field"><label>${t('auth.name')}</label><input name="name" required></div>
-              <div class="field"><label>${t('auth.role')}</label>
-                <select name="role">
-                  <option value="student">${t('auth.role.student')}</option>
-                  <option value="teacher">${t('auth.role.teacher')}</option>
-                  <option value="parent">${t('auth.role.parent')}</option>
-                  <option value="admin">${t('auth.role.admin')}</option>
-                </select></div>`}
-            <div class="field"><label>${t('auth.email')}</label><input name="email" type="email" required dir="ltr"></div>
-            <div class="field"><label>${t('auth.password')}</label><input name="password" type="password" required minlength="8" dir="ltr"></div>
-            <div id="authErr" class="small mb" style="color:var(--danger)"></div>
-            <button class="btn btn-primary btn-block btn-lg">${t(isLogin ? 'auth.login' : 'auth.register')}</button>
-          </form>
-          <div class="center small mt">
-            ${t(isLogin ? 'auth.noAccount' : 'auth.haveAccount')}
-            <a href="${isLogin ? '/register' : '/login'}">${t(isLogin ? 'auth.register' : 'auth.login')}</a>
-          </div>
+        <div class="row mb">
+          ${Object.entries(LANGS).map(([code, label]) =>
+            `<button class="chip ${i18n.lang === code ? 'selected' : ''}" data-lang="${code}">${label}</button>`).join('')}
         </div>
+        <div class="card" id="authCard"></div>
       </div>`;
 
     out.querySelectorAll('[data-lang]').forEach(b => b.onclick = async () => {
@@ -54,20 +33,92 @@ export function authView(mode) {
       document.dispatchEvent(new CustomEvent('dc:relang'));
     });
 
-    out.querySelector('#authForm').onsubmit = async e => {
-      e.preventDefault();
-      const f = Object.fromEntries(new FormData(e.target));
-      const err = out.querySelector('#authErr');
-      err.textContent = '';
-      try {
-        if (isLogin) await session.login(f.email, f.password);
-        else await session.register(f);
-        document.dispatchEvent(new CustomEvent('dc:auth'));
-        router.go('/');
-      } catch (ex) {
-        err.textContent = t('auth.' + (ex.body?.error || 'bad_credentials'));
-      }
+    const card = out.querySelector('#authCard');
+
+    const renderOtp = ({ userId, email }) => {
+      card.innerHTML = `
+        <h2>${t('auth.otpTitle')}</h2>
+        <p class="small muted">${t('auth.otpHint', { email: esc(email) })}</p>
+        <form id="otpForm">
+          <div class="field">
+            <input name="code" class="code-input" maxlength="6" inputmode="numeric" autocomplete="one-time-code" required dir="ltr" placeholder="000000">
+          </div>
+          <div id="otpErr" class="small mb" style="color:var(--danger)"></div>
+          <button class="btn btn-primary btn-block btn-lg">${t('auth.otpVerify')}</button>
+        </form>
+        <div class="center small mt"><a href="#" id="otpResend">${t('auth.otpResend')}</a></div>`;
+
+      out.querySelector('#otpForm').onsubmit = async e => {
+        e.preventDefault();
+        const code = new FormData(e.target).get('code');
+        const err = out.querySelector('#otpErr');
+        err.textContent = '';
+        try {
+          await session.verifyEmail(userId, code);
+          document.dispatchEvent(new CustomEvent('dc:auth'));
+          router.go('/');
+        } catch (ex) {
+          err.textContent = t('auth.' + (ex.body?.error || 'invalid_code'));
+        }
+      };
+      out.querySelector('#otpResend').onclick = async e => {
+        e.preventDefault();
+        try {
+          await session.resendOtp(userId);
+          toast('✅ ' + t('auth.otpResent'), 'success');
+        } catch (ex) {
+          const code = ex.body?.error;
+          toast(code === 'otp_cooldown' ? t('auth.otp_cooldown', { sec: ex.body.retryInSec }) : t('common.error'), 'error');
+        }
+      };
     };
+
+    const renderForm = () => {
+      card.innerHTML = `
+        <h2>${t(isLogin ? 'auth.login' : 'auth.register')}</h2>
+        <form id="authForm">
+          ${isLogin ? '' : `
+            <div class="field"><label>${t('auth.name')}</label><input name="name" required></div>
+            <div class="field"><label>${t('auth.role')}</label>
+              <select name="role">
+                <option value="student">${t('auth.role.student')}</option>
+                <option value="teacher">${t('auth.role.teacher')}</option>
+                <option value="parent">${t('auth.role.parent')}</option>
+                <option value="admin">${t('auth.role.admin')}</option>
+              </select></div>`}
+          <div class="field"><label>${t('auth.email')}</label><input name="email" type="email" required dir="ltr"></div>
+          <div class="field"><label>${t('auth.password')}</label><input name="password" type="password" required minlength="8" dir="ltr"></div>
+          <div id="authErr" class="small mb" style="color:var(--danger)"></div>
+          <button class="btn btn-primary btn-block btn-lg">${t(isLogin ? 'auth.login' : 'auth.register')}</button>
+        </form>
+        <div class="center small mt">
+          ${t(isLogin ? 'auth.noAccount' : 'auth.haveAccount')}
+          <a href="${isLogin ? '/register' : '/login'}">${t(isLogin ? 'auth.register' : 'auth.login')}</a>
+        </div>`;
+
+      out.querySelector('#authForm').onsubmit = async e => {
+        e.preventDefault();
+        const f = Object.fromEntries(new FormData(e.target));
+        const err = out.querySelector('#authErr');
+        err.textContent = '';
+        try {
+          if (isLogin) {
+            await session.login(f.email, f.password);
+            document.dispatchEvent(new CustomEvent('dc:auth'));
+            router.go('/');
+          } else {
+            const r = await session.register(f);
+            renderOtp(r);
+          }
+        } catch (ex) {
+          const code = ex.body?.error;
+          if (code === 'email_not_verified') renderOtp(ex.body);
+          else err.textContent = t('auth.' + (code || 'bad_credentials'));
+        }
+      };
+    };
+
+    renderForm();
   };
 }
 
