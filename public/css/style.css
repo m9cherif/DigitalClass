@@ -375,6 +375,143 @@ pre {
 .skeleton { background: linear-gradient(90deg, var(--surface-2), var(--surface-3), var(--surface-2)); background-size: 200% 100%; animation: sk 1.2s infinite; border-radius: var(--radius-sm); block-size: 70px; }
 @keyframes sk { to { background-position: -200% 0; } }
 
+/* ------------------------------------------------ question media & images */
+
+.q-media { margin: 0 0 1rem; }
+.q-media img, .q-media video {
+  inline-size: 100%; max-block-size: 340px; object-fit: contain;
+  border-radius: var(--radius); background: var(--surface-3); display: block;
+}
+.q-media audio { inline-size: 100%; }
+.q-media figcaption { font-size: .78rem; color: var(--muted); margin-block-start: .35rem; text-align: center; }
+
+/* Image choice grid */
+.img-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: .7rem; }
+.img-tile {
+  position: relative; padding: 0; border: 2px solid var(--border); background: var(--surface-2);
+  border-radius: var(--radius); overflow: hidden; cursor: pointer; display: block;
+  transition: border-color .15s ease, transform .1s ease;
+}
+.img-tile:hover { border-color: var(--primary); }
+.img-tile.selected { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
+.img-tile img { inline-size: 100%; aspect-ratio: 4 / 3; object-fit: cover; display: block; }
+.img-tile-tick {
+  position: absolute; inset-block-start: .4rem; inset-inline-start: .4rem;
+  inline-size: 26px; block-size: 26px; border-radius: 50%; display: grid; place-items: center;
+  background: rgba(0, 0, 0, .6); color: #fff; font-weight: 700; font-size: .8rem;
+}
+.img-tile.selected .img-tile-tick { background: var(--primary); }
+.img-tile-label {
+  display: block; padding: .4rem .5rem; font-size: .82rem; font-weight: 600;
+  color: var(--text); text-align: start;
+}
+
+/* Clickable image canvas (hotspot / labelling) */
+/* The click box must be exactly the image box: zone and pin coordinates are
+   percentages of it. So the image fills the canvas width and sets its own
+   height — capping the height instead would letterbox and shift the maths.
+   An explicit width is also what gives a viewBox-only SVG a size at all. */
+.img-canvas {
+  position: relative; display: block; inline-size: 100%; max-inline-size: 560px;
+  border-radius: var(--radius); overflow: hidden; border: 1px solid var(--border);
+  cursor: crosshair; touch-action: manipulation; line-height: 0;
+}
+.img-canvas img { inline-size: 100%; block-size: auto; display: block; }
+.img-canvas.review { cursor: default; }
+.img-pin {
+  position: absolute; inline-size: 22px; block-size: 22px; margin: -11px 0 0 -11px;
+  border-radius: 50%; background: var(--primary); border: 3px solid #fff;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, .5); pointer-events: none;
+}
+.img-pin.ok { background: var(--success); }
+.img-pin.bad { background: var(--danger); }
+.img-zone {
+  position: absolute; border: 2px dashed var(--success);
+  background: rgba(52, 211, 153, .18); border-radius: 6px; pointer-events: none;
+}
+.img-marker {
+  position: absolute; margin: -14px 0 0 -14px;
+  inline-size: 28px; block-size: 28px; border-radius: 50%; display: grid; place-items: center;
+  background: var(--surface); color: var(--text); border: 2px solid var(--primary);
+  font-weight: 700; font-size: .8rem; cursor: pointer; line-height: 1;
+}
+.img-marker.done { background: var(--primary); color: #fff; }
+.marker-row { gap: .5rem; margin: 0; }
+.marker-num {
+  inline-size: 26px; block-size: 26px; border-radius: 50%; flex: none;
+  display: grid; place-items: center; background: var(--surface-3);
+  font-weight: 700; font-size: .78rem;
+}
+
+/* Ordering images */
+.img-order { display: grid; gap: .5rem; }
+.img-order-item {
+  display: flex; align-items: center; gap: .7rem; padding: .5rem;
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-sm);
+}
+.img-order-item img { inline-size: 84px; block-size: 60px; object-fit: cover; border-radius: 6px; flex: none; }
+.img-order-rank {
+  inline-size: 26px; block-size: 26px; border-radius: 50%; flex: none; display: grid; place-items: center;
+  background: var(--primary); color: #fff; font-weight: 700; font-size: .78rem;
+}
+.img-order-caption { flex: 1; font-size: .88rem; }
+.img-order-moves { display: flex; gap: .3rem; margin-inline-start: auto; }
+
+/* Review: the picture the student picked, next to the expected one */
+.review-thumbs { display: flex; gap: .6rem; flex-wrap: wrap; margin-block: .6rem; }
+.review-thumb { margin: 0; inline-size: 128px; }
+.review-thumb img {
+  inline-size: 100%; aspect-ratio: 4 / 3; object-fit: cover;
+  border-radius: var(--radius-sm); border: 2px solid var(--border); display: block;
+}
+.review-thumb.ok img { border-color: var(--success); }
+.review-thumb.bad img { border-color: var(--danger); }
+.review-thumb.want img { border-color: var(--success); border-style: dashed; }
+.review-thumb figcaption { font-size: .74rem; color: var(--muted); text-align: center; margin-block-start: .25rem; }
+.review-thumb.want figcaption::before { content: '✓ '; color: var(--success); }
+.review-thumb.bad figcaption::before { content: '✕ '; color: var(--danger); }
+
+.tt-cell { min-inline-size: 46px; font-family: var(--mono); font-weight: 700; }
+.tt-cell.answered { border-color: var(--primary); color: var(--primary); }
+.flash-face { background: var(--surface-2); }
+
+/* --------------------------------------------------- question authoring */
+
+.build-media summary { cursor: pointer; font-weight: 600; font-size: .88rem; padding: .3rem 0; }
+.build-thumb {
+  max-inline-size: 100%; max-block-size: 170px; border-radius: var(--radius-sm);
+  border: 1px solid var(--border); display: block;
+}
+.build-empty {
+  padding: 1rem; text-align: center; color: var(--muted); font-size: .84rem;
+  border: 1.5px dashed var(--border); border-radius: var(--radius-sm);
+}
+.build-img-list { display: grid; gap: .45rem; }
+.build-img-row {
+  display: flex; align-items: center; gap: .5rem; flex-wrap: wrap;
+  padding: .45rem; background: var(--surface-2);
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+}
+.build-img-row.is-answer { border-color: var(--success); }
+.build-img-row img { inline-size: 68px; block-size: 50px; object-fit: cover; border-radius: 5px; flex: none; }
+.build-img-row input { flex: 1; min-inline-size: 120px; }
+.build-canvas {
+  position: relative; display: block; inline-size: 100%; max-inline-size: 460px; line-height: 0;
+  border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; cursor: crosshair;
+}
+.build-canvas img { inline-size: 100%; block-size: auto; display: block; }
+.build-zone {
+  position: absolute; border: 2px solid var(--warning); background: rgba(251, 191, 36, .2);
+  border-radius: 5px; color: var(--text); font-size: .7rem; font-weight: 700;
+  display: grid; place-items: center; line-height: 1;
+}
+.build-zone.is-answer { border-color: var(--success); background: rgba(52, 211, 153, .25); }
+.build-marker {
+  position: absolute; margin: -13px 0 0 -13px; inline-size: 26px; block-size: 26px;
+  border-radius: 50%; display: grid; place-items: center; background: var(--primary);
+  color: #fff; font-weight: 700; font-size: .75rem; line-height: 1;
+}
+
 /* ----------------------------------------------------- join codes & rows */
 
 .join-card { display: grid; gap: .8rem; border-color: var(--primary); }
@@ -514,6 +651,11 @@ pre {
   .live-bar { justify-content: center; border-radius: var(--radius); }
   .live-btn { inline-size: 46px; block-size: 46px; }
   .live-btn.danger { margin-inline-start: 0; }
+
+  .img-grid { grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: .5rem; }
+  .img-order-item img { inline-size: 64px; block-size: 48px; }
+  .build-img-row img { inline-size: 54px; block-size: 40px; }
+  .q-media img, .q-media video { max-block-size: 240px; }
 
   .modal { padding: 1rem; max-block-size: 92vh; }
   .toast-host { inset-inline: .6rem; inset-block-end: calc(72px + env(safe-area-inset-bottom)); }

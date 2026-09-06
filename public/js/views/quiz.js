@@ -112,6 +112,7 @@ function runPlayer({ attempt, questions }, quiz, out) {
           <span class="badge badge-primary">${q.points} ${t('common.points')}</span>
         </div>
         <div class="q-prompt">${esc(i18n.pick(q, 'prompt', q.prompt))}</div>
+        ${Q.renderMedia(q.media)}
         ${q.hint ? `<details class="small mb"><summary class="muted">${t('quiz.hint')}</summary>${esc(q.hint)}</details>` : ''}
         <div id="qbody"></div>
       </div>
@@ -302,8 +303,66 @@ export async function quizEditView({ id }, out) {
 }
 
 /** Type-aware editor: the answer-key fields change with the selected type. */
+/* ------------------------------------------------------- authoring helpers */
+
+/** Opens the file picker, uploads, and resolves to the stored URL (or null). */
+function pickImage() {
+  return new Promise(resolve => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/*';
+    input.onchange = async () => {
+      const file = input.files?.[0];
+      if (!file) return resolve(null);
+      try {
+        resolve((await api.upload(file)).url);
+      } catch (err) {
+        toast(err.body?.error === 'rejected_file_type_or_size'
+          ? t('build.imageRejected') : t('common.error'), 'error');
+        resolve(null);
+      }
+    };
+    input.click();
+  });
+}
+
+/** Upload / paste-a-URL / clear control, rendered into `host`. */
+function imageSlot(host, value, onChange) {
+  const draw = url => {
+    host.innerHTML = `
+      ${url ? `<img class="build-thumb" src="${esc(url)}" alt="">` : `<div class="build-empty">${t('build.noImage')}</div>`}
+      <div class="row mt">
+        <button type="button" class="btn btn-sm" data-up>⬆ ${t('build.upload')}</button>
+        <button type="button" class="btn btn-sm" data-url>🔗 ${t('build.useUrl')}</button>
+        ${url ? `<button type="button" class="btn btn-sm btn-danger" data-clear>✕</button>` : ''}
+      </div>`;
+    host.querySelector('[data-up]').onclick = async () => {
+      const picked = await pickImage();
+      if (picked) { draw(picked); onChange(picked); }
+    };
+    host.querySelector('[data-url]').onclick = () => {
+      const entered = window.prompt(t('build.useUrl'), url || 'https://');
+      if (entered) { draw(entered.trim()); onChange(entered.trim()); }
+    };
+    host.querySelector('[data-clear]')?.addEventListener('click', () => { draw(''); onChange(''); });
+  };
+  draw(value || '');
+}
+
+/** Percentage position of a click inside an element, clamped to 0-100. */
+function clickPercent(el, event) {
+  const r = el.getBoundingClientRect();
+  return {
+    x: +Math.max(0, Math.min(100, ((event.clientX - r.left) / r.width) * 100)).toFixed(1),
+    y: +Math.max(0, Math.min(100, ((event.clientY - r.top) / r.height) * 100)).toFixed(1)
+  };
+}
+
 function questionEditor(quizId, types, existing, done) {
   const q = existing || { type: 'mcq_single', prompt: '', points: 1, data: { options: ['', ''], answer: 0 }, explanation: '' };
+  // Working copy for the click-driven image editors, which build their data
+  // structurally rather than from text inputs.
+  const D = { ...(q.data || {}) };
 
   const dataFields = type => {
     const d = q.type === type ? (q.data || {}) : {};
@@ -372,6 +431,47 @@ function questionEditor(quizId, types, existing, done) {
           <div class="field"><label>Regions as "id = label" (one per line)</label>
             <textarea id="d_regions">${esc((d.regions || []).map(r => `${r.id} = ${r.label}`).join('\n'))}</textarea></div>
           <div class="field"><label>Correct region id</label><input id="d_answer" value="${esc((d.answer || [])[0] || '')}"></div>`;
+      case 'image_choice':
+        return `
+          <label class="row small mb"><input type="checkbox" id="d_multiple" style="inline-size:auto"
+            ${d.multiple ? 'checked' : ''}> ${t('build.allowMultiple')}</label>
+          <div class="field"><label>${t('build.imageOptions')}</label>
+            <div id="d_imgopts" class="build-img-list"></div>
+            <button type="button" class="btn btn-sm mt" data-add-img-option>+ ${t('build.addImage')}</button>
+          </div>
+          <p class="tiny muted">${t('build.imageChoiceHint')}</p>`;
+
+      case 'image_hotspot':
+        return `
+          <div class="field"><label>${t('build.image')}</label>
+            <div data-image-slot="d_image" data-value="${esc(d.image || '')}"></div></div>
+          <div class="field"><label>${t('build.zones')}</label>
+            <div id="d_zoneCanvas" class="build-canvas"></div>
+            <p class="tiny muted">${t('build.zonesHint')}</p>
+            <div id="d_zoneList" class="stack mt"></div>
+          </div>`;
+
+      case 'image_label':
+        return `
+          <div class="field"><label>${t('build.image')}</label>
+            <div data-image-slot="d_image" data-value="${esc(d.image || '')}"></div></div>
+          <div class="field"><label>${t('build.labels')}</label>
+            <textarea id="d_labels" rows="3">${esc((d.labels || []).join('\n'))}</textarea>
+            <p class="tiny muted">${t('build.labelsHint')}</p></div>
+          <div class="field"><label>${t('build.markers')}</label>
+            <div id="d_markerCanvas" class="build-canvas"></div>
+            <p class="tiny muted">${t('build.markersHint')}</p>
+            <div id="d_markerList" class="stack mt"></div>
+          </div>`;
+
+      case 'image_order':
+        return `
+          <div class="field"><label>${t('build.imagesInOrder')}</label>
+            <div id="d_orderList" class="build-img-list"></div>
+            <button type="button" class="btn btn-sm mt" data-add-order-image>+ ${t('build.addImage')}</button>
+            <p class="tiny muted mt">${t('build.imageOrderHint')}</p>
+          </div>`;
+
       case 'flashcard':
         return `<div class="field"><label>Back of the card</label><textarea id="d_back">${esc(d.back || '')}</textarea></div>`;
       case 'essay':
@@ -388,6 +488,11 @@ function questionEditor(quizId, types, existing, done) {
       <select id="type">${types.map(x =>
         `<option value="${x.id}" ${q.type === x.id ? 'selected' : ''}>${t('qtype.' + x.id)}</option>`).join('')}</select></div>
     <div class="field"><label>${t('quiz.question')}</label><textarea id="prompt">${esc(q.prompt)}</textarea></div>
+    <details class="field build-media" ${q.media ? 'open' : ''}>
+      <summary>🖼️ ${t('build.illustration')}</summary>
+      <p class="tiny muted">${t('build.illustrationHint')}</p>
+      <div id="mediaSlot"></div>
+    </details>
     <div id="typeFields"></div>
     <div class="row">
       <div class="field" style="flex:1"><label>${t('common.points')}</label><input id="points" type="number" value="${q.points}"></div>
@@ -402,8 +507,217 @@ function questionEditor(quizId, types, existing, done) {
 
   const typeSel = root.querySelector('#type');
   const fields = root.querySelector('#typeFields');
-  const paint = () => fields.innerHTML = dataFields(typeSel.value);
+
+  let media = q.media ? (typeof q.media === 'string' ? { url: q.media } : { ...q.media }) : null;
+  imageSlot(root.querySelector('#mediaSlot'), media?.url, url => { media = url ? { url } : null; });
+
+  const paint = () => {
+    fields.innerHTML = dataFields(typeSel.value);
+    wireImageAuthoring(typeSel.value);
+  };
   typeSel.onchange = paint;
+
+  /* -------------------------------------------------- click-driven editors */
+
+  function wireImageAuthoring(type) {
+    // Simple image slots (hotspot / label background).
+    fields.querySelectorAll('[data-image-slot]').forEach(slot => {
+      imageSlot(slot, slot.dataset.value, url => {
+        D.image = url;
+        if (type === 'image_hotspot') drawZones();
+        if (type === 'image_label') drawMarkers();
+      });
+    });
+
+    if (type === 'image_choice') {
+      D.options = Array.isArray(D.options) ? D.options : [];
+      drawImageOptions();
+      fields.querySelector('[data-add-img-option]').onclick = async () => {
+        const url = await pickImage();
+        if (url) { D.options.push({ url, label: '' }); drawImageOptions(); }
+      };
+    }
+
+    if (type === 'image_order') {
+      D.items = Array.isArray(D.items) ? D.items : [];
+      drawOrderItems();
+      fields.querySelector('[data-add-order-image]').onclick = async () => {
+        const url = await pickImage();
+        if (url) { D.items.push({ id: 'i' + Date.now().toString(36), url, caption: '' }); drawOrderItems(); }
+      };
+    }
+
+    if (type === 'image_hotspot') { D.zones ??= []; D.answer ??= []; drawZones(); }
+    if (type === 'image_label') { D.markers ??= []; D.answer ??= {}; drawMarkers(); }
+  }
+
+  function drawImageOptions() {
+    const host = fields.querySelector('#d_imgopts');
+    if (!host) return;
+    const answers = new Set((Array.isArray(D.answer) ? D.answer : [D.answer]).map(Number));
+    const multiple = fields.querySelector('#d_multiple')?.checked;
+    host.innerHTML = D.options.map((o, i) => `
+      <div class="build-img-row ${answers.has(i) ? 'is-answer' : ''}">
+        <img src="${esc(o.url)}" alt="">
+        <input placeholder="${t('build.optionLabel')}" value="${esc(o.label || '')}" data-opt-label="${i}">
+        <button type="button" class="btn btn-sm ${answers.has(i) ? 'btn-success' : ''}" data-opt-correct="${i}">
+          ${answers.has(i) ? '✓ ' + t('quiz.correct') : t('build.markCorrect')}</button>
+        <button type="button" class="btn btn-sm btn-danger" data-opt-del="${i}">✕</button>
+      </div>`).join('') || `<div class="build-empty">${t('build.noImagesYet')}</div>`;
+
+    host.querySelectorAll('[data-opt-label]').forEach(inp => inp.oninput = () => {
+      D.options[Number(inp.dataset.optLabel)].label = inp.value;
+    });
+    host.querySelectorAll('[data-opt-correct]').forEach(b => b.onclick = () => {
+      const i = Number(b.dataset.optCorrect);
+      if (multiple) {
+        const set = new Set(Array.isArray(D.answer) ? D.answer.map(Number) : []);
+        set.has(i) ? set.delete(i) : set.add(i);
+        D.answer = [...set].sort((a, b2) => a - b2);
+      } else D.answer = i;
+      drawImageOptions();
+    });
+    host.querySelectorAll('[data-opt-del]').forEach(b => b.onclick = () => {
+      D.options.splice(Number(b.dataset.optDel), 1);
+      D.answer = Array.isArray(D.answer) ? [] : 0;
+      drawImageOptions();
+    });
+    fields.querySelector('#d_multiple').onchange = () => {
+      D.answer = fields.querySelector('#d_multiple').checked ? [] : 0;
+      drawImageOptions();
+    };
+  }
+
+  function drawOrderItems() {
+    const host = fields.querySelector('#d_orderList');
+    if (!host) return;
+    host.innerHTML = D.items.map((it, i) => `
+      <div class="build-img-row">
+        <span class="marker-num">${i + 1}</span>
+        <img src="${esc(it.url)}" alt="">
+        <input placeholder="${t('build.caption')}" value="${esc(it.caption || '')}" data-item-caption="${i}">
+        <button type="button" class="btn btn-sm" data-item-up="${i}" ${i === 0 ? 'disabled' : ''}>↑</button>
+        <button type="button" class="btn btn-sm" data-item-down="${i}" ${i === D.items.length - 1 ? 'disabled' : ''}>↓</button>
+        <button type="button" class="btn btn-sm btn-danger" data-item-del="${i}">✕</button>
+      </div>`).join('') || `<div class="build-empty">${t('build.noImagesYet')}</div>`;
+
+    host.querySelectorAll('[data-item-caption]').forEach(inp => inp.oninput = () => {
+      D.items[Number(inp.dataset.itemCaption)].caption = inp.value;
+    });
+    const swap = (a, b) => { [D.items[a], D.items[b]] = [D.items[b], D.items[a]]; drawOrderItems(); };
+    host.querySelectorAll('[data-item-up]').forEach(b => b.onclick = () => swap(Number(b.dataset.itemUp), Number(b.dataset.itemUp) - 1));
+    host.querySelectorAll('[data-item-down]').forEach(b => b.onclick = () => swap(Number(b.dataset.itemDown), Number(b.dataset.itemDown) + 1));
+    host.querySelectorAll('[data-item-del]').forEach(b => b.onclick = () => {
+      D.items.splice(Number(b.dataset.itemDel), 1); drawOrderItems();
+    });
+  }
+
+  function drawZones() {
+    const canvas = fields.querySelector('#d_zoneCanvas');
+    const list = fields.querySelector('#d_zoneList');
+    if (!canvas || !list) return;
+    const answers = new Set((D.answer || []).map(String));
+
+    canvas.innerHTML = D.image
+      ? `<img src="${esc(D.image)}" alt="">
+         ${D.zones.map((z, i) => `<span class="build-zone ${answers.has(String(z.id)) ? 'is-answer' : ''}"
+             style="inset-inline-start:${z.x}%;inset-block-start:${z.y}%;inline-size:${z.w}%;block-size:${z.h}%">${i + 1}</span>`).join('')}`
+      : `<div class="build-empty">${t('build.addImageFirst')}</div>`;
+
+    if (D.image) {
+      canvas.onclick = e => {
+        if (e.target.classList.contains('build-zone')) return;
+        const p = clickPercent(canvas.querySelector('img') || canvas, e);
+        D.zones.push({
+          id: 'z' + Date.now().toString(36),
+          label: '',
+          x: +Math.max(0, p.x - 10).toFixed(1), y: +Math.max(0, p.y - 10).toFixed(1), w: 20, h: 20
+        });
+        drawZones();
+      };
+    }
+
+    list.innerHTML = D.zones.map((z, i) => `
+      <div class="build-img-row">
+        <span class="marker-num">${i + 1}</span>
+        <input placeholder="${t('build.zoneLabel')}" value="${esc(z.label || '')}" data-zone-label="${i}">
+        <label class="tiny muted">W<input type="number" min="2" max="100" value="${z.w}" data-zone-w="${i}" style="inline-size:64px"></label>
+        <label class="tiny muted">H<input type="number" min="2" max="100" value="${z.h}" data-zone-h="${i}" style="inline-size:64px"></label>
+        <button type="button" class="btn btn-sm ${answers.has(String(z.id)) ? 'btn-success' : ''}" data-zone-correct="${i}">
+          ${answers.has(String(z.id)) ? '✓' : t('build.markCorrect')}</button>
+        <button type="button" class="btn btn-sm btn-danger" data-zone-del="${i}">✕</button>
+      </div>`).join('') || `<div class="build-empty">${t('build.clickToAddZone')}</div>`;
+
+    list.querySelectorAll('[data-zone-label]').forEach(i2 => i2.oninput = () => D.zones[Number(i2.dataset.zoneLabel)].label = i2.value);
+    for (const dim of ['w', 'h']) {
+      list.querySelectorAll(`[data-zone-${dim}]`).forEach(inp => inp.onchange = () => {
+        D.zones[Number(inp.dataset[`zone${dim.toUpperCase()}`])][dim] = Number(inp.value) || 20;
+        drawZones();
+      });
+    }
+    list.querySelectorAll('[data-zone-correct]').forEach(b => b.onclick = () => {
+      const id = String(D.zones[Number(b.dataset.zoneCorrect)].id);
+      const set = new Set((D.answer || []).map(String));
+      set.has(id) ? set.delete(id) : set.add(id);
+      D.answer = [...set];
+      drawZones();
+    });
+    list.querySelectorAll('[data-zone-del]').forEach(b => b.onclick = () => {
+      const [gone] = D.zones.splice(Number(b.dataset.zoneDel), 1);
+      D.answer = (D.answer || []).filter(a => String(a) !== String(gone.id));
+      drawZones();
+    });
+  }
+
+  function drawMarkers() {
+    const canvas = fields.querySelector('#d_markerCanvas');
+    const list = fields.querySelector('#d_markerList');
+    if (!canvas || !list) return;
+    const labels = (fields.querySelector('#d_labels')?.value || '')
+      .split('\n').map(s => s.trim()).filter(Boolean);
+
+    canvas.innerHTML = D.image
+      ? `<img src="${esc(D.image)}" alt="">
+         ${D.markers.map((m, i) => `<span class="build-marker"
+             style="inset-inline-start:${m.x}%;inset-block-start:${m.y}%">${i + 1}</span>`).join('')}`
+      : `<div class="build-empty">${t('build.addImageFirst')}</div>`;
+
+    if (D.image) {
+      canvas.onclick = e => {
+        if (e.target.classList.contains('build-marker')) return;
+        const p = clickPercent(canvas.querySelector('img') || canvas, e);
+        D.markers.push({ id: 'm' + Date.now().toString(36), x: p.x, y: p.y });
+        drawMarkers();
+      };
+    }
+
+    list.innerHTML = D.markers.map((m, i) => `
+      <div class="build-img-row">
+        <span class="marker-num">${i + 1}</span>
+        <select data-marker-answer="${esc(m.id)}" style="flex:1">
+          <option value="">${t('build.pickCorrectLabel')}</option>
+          ${labels.map(l => `<option ${D.answer?.[m.id] === l ? 'selected' : ''}>${esc(l)}</option>`).join('')}
+        </select>
+        <button type="button" class="btn btn-sm btn-danger" data-marker-del="${i}">✕</button>
+      </div>`).join('') || `<div class="build-empty">${t('build.clickToAddMarker')}</div>`;
+
+    list.querySelectorAll('[data-marker-answer]').forEach(sel => sel.onchange = () => {
+      D.answer = { ...(D.answer || {}) };
+      if (sel.value) D.answer[sel.dataset.markerAnswer] = sel.value;
+      else delete D.answer[sel.dataset.markerAnswer];
+    });
+    list.querySelectorAll('[data-marker-del]').forEach(b => b.onclick = () => {
+      const [gone] = D.markers.splice(Number(b.dataset.markerDel), 1);
+      if (D.answer) delete D.answer[gone.id];
+      drawMarkers();
+    });
+    const labelBox = fields.querySelector('#d_labels');
+    if (labelBox && !labelBox.dataset.wired) {
+      labelBox.dataset.wired = '1';
+      labelBox.oninput = () => drawMarkers();
+    }
+  }
+
   paint();
 
   const lines = id => (root.querySelector(id)?.value || '').split('\n').map(s => s.trim()).filter(Boolean);
@@ -465,6 +779,21 @@ function questionEditor(quizId, types, existing, done) {
           }; break;
         case 'flashcard': data = { back: g('#d_back') }; break;
         case 'essay': data = { minWords: Number(g('#d_minWords')), rubric: lines('#d_rubric') }; break;
+
+        // The image editors build their structure as the teacher clicks, so the
+        // working copy is already the payload.
+        case 'image_choice':
+          data = { options: D.options || [], answer: D.answer, multiple: !!g('#d_multiple') || fields.querySelector('#d_multiple')?.checked };
+          break;
+        case 'image_hotspot':
+          data = { image: D.image, imageAlt: D.imageAlt || '', zones: D.zones || [], answer: D.answer || [] };
+          break;
+        case 'image_label':
+          data = { image: D.image, imageAlt: D.imageAlt || '', markers: D.markers || [], labels: lines('#d_labels'), answer: D.answer || {} };
+          break;
+        case 'image_order':
+          data = { items: D.items || [], answer: (D.items || []).map(i => i.id) };
+          break;
       }
     } catch (e) {
       root.querySelector('#qerr').textContent = 'JSON: ' + e.message;
@@ -472,7 +801,7 @@ function questionEditor(quizId, types, existing, done) {
     }
 
     const payload = {
-      type, prompt: g('#prompt'), data,
+      type, prompt: g('#prompt'), data, media,
       points: Number(g('#points')), difficulty: g('#difficulty'), explanation: g('#explanation')
     };
     try {

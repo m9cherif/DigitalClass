@@ -143,6 +143,71 @@ export function grade(question, response) {
         hits === items.length ? 'correct' : 'partial', { hits, total: items.length, expected: key });
     }
 
+    /* ------------------------------------------------------------- image */
+
+    case 'image_choice': {
+      // Same scoring as an MCQ; only the presentation differs.
+      const multiple = !!d.multiple;
+      if (!multiple) {
+        const ok = Number(response) === Number(d.answer);
+        return result(ok ? 1 : 0, ok ? 'correct' : 'wrong_option', { expected: d.answer });
+      }
+      const picked = new Set(arr(response).map(Number));
+      const right = new Set(arr(d.answer).map(Number));
+      const hits = [...right].filter(i => picked.has(i)).length;
+      const falsePos = [...picked].filter(i => !right.has(i)).length;
+      if (d.partial === false) {
+        const exact = hits === right.size && falsePos === 0;
+        return result(exact ? 1 : 0, exact ? 'correct' : 'wrong_selection', { expected: [...right] });
+      }
+      const score = clamp01((hits - falsePos) / Math.max(1, right.size));
+      return result(score, score === 1 ? 'correct' : 'partial', { hits, falsePos, expected: [...right] });
+    }
+
+    case 'image_hotspot': {
+      // The student sends a click as { x, y } in percent of the image box; the
+      // zones stay server-side so the answer cannot be read off the markup.
+      const zones = arr(d.zones);
+      const accepted = new Set(arr(d.answer).map(String));
+      const point = response && typeof response === 'object'
+        ? { x: Number(response.x), y: Number(response.y) }
+        : null;
+      if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) {
+        return result(0, 'no_click', { expected: [...accepted] });
+      }
+      const hit = zones.find(z =>
+        point.x >= Number(z.x) && point.x <= Number(z.x) + Number(z.w) &&
+        point.y >= Number(z.y) && point.y <= Number(z.y) + Number(z.h));
+      const ok = hit ? accepted.has(String(hit.id)) : false;
+      return result(ok ? 1 : 0, ok ? 'correct' : 'wrong_region', {
+        clicked: hit ? hit.id : null,
+        point,
+        // Revealing the target zones is what lets the review screen draw them.
+        zones: zones.filter(z => accepted.has(String(z.id)))
+      });
+    }
+
+    case 'image_label': {
+      const key = d.answer ?? {};
+      const given = response ?? {};
+      const markers = Object.keys(key);
+      const hits = markers.filter(m => String(given[m]) === String(key[m])).length;
+      return result(markers.length ? hits / markers.length : 0,
+        hits === markers.length ? 'correct' : 'partial',
+        { hits, total: markers.length, expected: key });
+    }
+
+    case 'image_order': {
+      const expected = arr(d.answer).map(String);
+      const given = arr(response).map(String);
+      if (given.length !== expected.length) return result(0, 'incomplete', { expected });
+      if (given.every((v, i) => v === expected[i])) return result(1, 'correct', { expected });
+      const pos = new Map(expected.map((v, i) => [v, i]));
+      const seq = given.map(v => pos.has(v) ? pos.get(v) : -1).filter(i => i >= 0);
+      const lis = longestIncreasing(seq);
+      return result(clamp01(lis / expected.length) * 0.9, 'partial', { lis, total: expected.length, expected });
+    }
+
     case 'code_output': {
       const accepted = arr(d.accepted).map(a => String(a).replace(/\r/g, '').trim());
       const given = String(response ?? '').replace(/\r/g, '').trim();
@@ -201,10 +266,14 @@ export function grade(question, response) {
 
     case 'truth_table': {
       const expected = arr(d.answer).map(Boolean);
-      const given = arr(response).map(Boolean);
-      const hits = expected.filter((v, i) => given[i] === v).length;
+      const given = arr(response);
+      // An untouched cell arrives as null/undefined and must score nothing —
+      // coercing it to `false` used to hand out credit for a blank table.
+      const hits = expected.filter((v, i) => typeof given[i] === 'boolean' && given[i] === v).length;
+      const answered = given.filter(v => typeof v === 'boolean').length;
       return result(expected.length ? hits / expected.length : 0,
-        hits === expected.length ? 'correct' : 'partial', { hits, total: expected.length, expected });
+        hits === expected.length ? 'correct' : answered ? 'partial' : 'incomplete',
+        { hits, answered, total: expected.length, expected });
     }
 
     case 'hotspot': {

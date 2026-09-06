@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { db, now } from '../lib/db.js';
 import { gradeAttempt, nextReview } from '../quiz/grader.js';
+import { normaliseMedia } from '../quiz/types.js';
 import { awardXp, xpForAttempt } from '../lib/gamification.js';
 import { sanitize } from './quizzes.js';
 import { requireAuth, requireRole, canEditCourse, isEnrolled, publicUser } from '../middleware/auth.js';
@@ -104,6 +105,12 @@ function buildReview(questions, responses, result) {
     const r = result.perQuestion.find(p => p.questionId === q.id);
     return {
       questionId: q.id, type: q.type, prompt: q.prompt,
+      media: normaliseMedia(q.media),
+      // Lets the review draw the click back onto the picture it was made on.
+      image: q.data?.image ?? null,
+      // Choice labels, so the review can say "Cyan" instead of "1".
+      options: ['mcq_single', 'mcq_multiple', 'image_choice'].includes(q.type)
+        ? (q.data?.options ?? null) : null,
       yourAnswer: responses[q.id] ?? null,
       correct: r?.correct, score: r?.score, earned: r?.earned, points: r?.points,
       feedback: r?.feedback, details: r?.details, explanation: q.explanation || ''

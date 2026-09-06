@@ -143,6 +143,7 @@ export async function partyRoomView({ pin }, out) {
       </div>
       <div class="q-card">
         <div class="q-prompt" style="font-size:1.3rem">${esc(i18n.pick(q, 'prompt', q.prompt))}</div>
+        ${Q.renderMedia(q.media)}
         <div id="pbody"></div>
         <div id="feedback" class="mt"></div>
       </div>

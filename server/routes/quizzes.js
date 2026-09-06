@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { db } from '../lib/db.js';
-import { QUESTION_TYPES, TYPE_LIST } from '../quiz/types.js';
+import { QUESTION_TYPES, TYPE_LIST, normaliseMedia, typesByGroup } from '../quiz/types.js';
 import { runJs } from '../quiz/sandbox.js';
 import { requireAuth, requireRole, canEditCourse } from '../middleware/auth.js';
 
@@ -12,7 +12,8 @@ export function sanitize(question) {
   const safe = {};
   const carry = ['options', 'text', 'code', 'language', 'items', 'buckets', 'left', 'right',
     'image', 'regions', 'blanks', 'starter', 'functionName', 'schema', 'inputs', 'expression',
-    'value', 'fromBase', 'toBase', 'minWords', 'rubric', 'placeholder', 'back'];
+    'value', 'fromBase', 'toBase', 'minWords', 'rubric', 'placeholder', 'back',
+    'multiple', 'markers', 'labels', 'imageAlt'];
   for (const k of carry) if (d[k] !== undefined) safe[k] = d[k];
 
   if (d.blanks) safe.blanks = d.blanks.map((b, i) => ({ index: i, hint: b.hint || null }));
@@ -22,10 +23,19 @@ export function sanitize(question) {
   if (question.type === 'ordering' && d.items) safe.items = shuffle([...d.items]);
   if (question.type === 'flashcard') delete safe.back;
 
+  // Image types: the answer geometry must never reach the browser, or the
+  // target could simply be read out of the markup.
+  if (question.type === 'image_hotspot') delete safe.zones;
+  if (question.type === 'image_label') {
+    safe.markers = (d.markers || []).map(m => ({ id: m.id, x: m.x, y: m.y }));
+    safe.labels = shuffle([...(d.labels || [])]);
+  }
+  if (question.type === 'image_order' && d.items) safe.items = shuffle([...d.items]);
+
   return {
     id: question.id, type: question.type, prompt: question.prompt, i18n: question.i18n || {},
     points: question.points ?? 1, difficulty: question.difficulty, hint: question.hint || null,
-    media: question.media || null, tags: question.tags || [], data: safe
+    media: normaliseMedia(question.media), tags: question.tags || [], data: safe
   };
 }
 
@@ -35,7 +45,10 @@ function shuffle(a) {
 }
 
 router.get('/types', (_req, res) => {
-  res.json({ types: TYPE_LIST.map(t => ({ id: t, ...QUESTION_TYPES[t] })) });
+  res.json({
+    types: TYPE_LIST.map(t => ({ id: t, ...QUESTION_TYPES[t] })),
+    groups: typesByGroup()
+  });
 });
 
 /** Quiz list — teachers see their drafts, students only published ones. */
@@ -158,6 +171,32 @@ function validateQuestion(body) {
       break;
     case 'hotspot':
       if (!d.answer) return 'need_region';
+      break;
+    case 'image_choice':
+      if (!Array.isArray(d.options) || d.options.length < 2) return 'need_2_images';
+      if (d.options.some(o => !o?.url)) return 'every_option_needs_an_image';
+      if (d.multiple ? !Array.isArray(d.answer) || !d.answer.length : typeof d.answer !== 'number') {
+        return 'bad_answer_index';
+      }
+      break;
+    case 'image_hotspot': {
+      if (!d.image) return 'need_image';
+      if (!Array.isArray(d.zones) || !d.zones.length) return 'need_zones';
+      const ids = new Set(d.zones.map(z => String(z.id)));
+      if (!Array.isArray(d.answer) || !d.answer.length) return 'need_answer_zone';
+      if (d.answer.some(a => !ids.has(String(a)))) return 'answer_zone_not_in_zones';
+      break;
+    }
+    case 'image_label':
+      if (!d.image) return 'need_image';
+      if (!Array.isArray(d.markers) || !d.markers.length) return 'need_markers';
+      if (!Array.isArray(d.labels) || d.labels.length < 2) return 'need_2_labels';
+      if (!d.answer || Object.keys(d.answer).length !== d.markers.length) return 'label_every_marker';
+      break;
+    case 'image_order':
+      if (!Array.isArray(d.items) || d.items.length < 2) return 'need_2_images';
+      if (d.items.some(i => !i?.url)) return 'every_item_needs_an_image';
+      if (!Array.isArray(d.answer) || d.answer.length !== d.items.length) return 'need_answer_order';
       break;
   }
   return null;

@@ -329,6 +329,106 @@ quiz(cAlgo, {
   }
 ]);
 
+/* Self-contained SVG diagrams, so the demo needs no uploaded assets. */
+// width/height as well as viewBox: an SVG with only a viewBox has no intrinsic
+// size, and would collapse to nothing wherever the CSS does not force one.
+const svg = body =>
+  'data:image/svg+xml;utf8,' + encodeURIComponent(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="400" height="260" viewBox="0 0 400 260">${body}</svg>`);
+
+const boardSvg = svg(`
+  <rect width="400" height="260" fill="#0f172a"/>
+  <rect x="40" y="40" width="90" height="70" rx="8" fill="#6366f1"/>
+  <text x="85" y="82" fill="#fff" font-size="16" font-family="sans-serif" text-anchor="middle">CPU</text>
+  <rect x="180" y="40" width="170" height="34" rx="6" fill="#22d3ee"/>
+  <text x="265" y="63" fill="#062b33" font-size="14" font-family="sans-serif" text-anchor="middle">RAM</text>
+  <rect x="180" y="96" width="170" height="34" rx="6" fill="#22d3ee"/>
+  <rect x="40" y="160" width="140" height="60" rx="8" fill="#f59e0b"/>
+  <text x="110" y="196" fill="#3b2600" font-size="14" font-family="sans-serif" text-anchor="middle">Disque</text>
+  <rect x="220" y="160" width="130" height="60" rx="8" fill="#34d399"/>
+  <text x="285" y="196" fill="#05261a" font-size="13" font-family="sans-serif" text-anchor="middle">Carte réseau</text>`);
+
+const shape = (fill, label) => svg(
+  `<rect width="400" height="260" fill="#111827"/>
+   <rect x="60" y="40" width="280" height="180" rx="14" fill="${fill}"/>
+   <text x="200" y="145" fill="#0b0f1a" font-size="34" font-family="sans-serif" text-anchor="middle">${label}</text>`);
+
+quiz(cAlgo, {
+  title: 'Lire un schéma — questions illustrées',
+  description: 'Types visuels : cliquer sur une image, annoter un schéma, ordonner et choisir des images.',
+  kind: 'practice', difficulty: 'easy',
+  i18n: { en: { title: 'Reading a diagram — visual questions' }, ar: { title: 'قراءة رسم بياني — أسئلة مصورة' } }
+}, [
+  {
+    type: 'image_hotspot',
+    prompt: 'Cliquez sur le processeur (CPU) dans ce schéma.',
+    i18n: { en: { prompt: 'Click the processor (CPU) in this diagram.' },
+            ar: { prompt: 'انقر على المعالج (CPU) في هذا الرسم.' } },
+    data: {
+      image: boardSvg,
+      imageAlt: 'Schéma simplifié d\'une carte mère',
+      zones: [
+        { id: 'cpu', label: 'CPU', x: 10, y: 15, w: 23, h: 27 },
+        { id: 'ram', label: 'RAM', x: 45, y: 15, w: 43, h: 13 },
+        { id: 'disk', label: 'Disque', x: 10, y: 61, w: 35, h: 23 },
+        { id: 'nic', label: 'Réseau', x: 55, y: 61, w: 33, h: 23 }
+      ],
+      answer: ['cpu']
+    },
+    explanation: 'Le CPU exécute les instructions ; la RAM ne fait que les stocker temporairement.',
+    points: 3
+  },
+  {
+    type: 'image_label',
+    prompt: 'Annotez chaque composant du schéma.',
+    i18n: { en: { prompt: 'Label each component of the diagram.' } },
+    data: {
+      image: boardSvg,
+      markers: [{ id: 'm1', x: 21, y: 29 }, { id: 'm2', x: 66, y: 22 }, { id: 'm3', x: 27, y: 73 }],
+      labels: ['CPU', 'RAM', 'Disque dur', 'Carte réseau'],
+      answer: { m1: 'CPU', m2: 'RAM', m3: 'Disque dur' }
+    },
+    points: 3
+  },
+  {
+    type: 'image_choice',
+    prompt: 'Quelle couleur représente la mémoire vive dans le schéma précédent ?',
+    i18n: { en: { prompt: 'Which colour stands for RAM in the diagram above?' } },
+    data: {
+      options: [
+        { url: shape('#6366f1', 'A'), label: 'Violet' },
+        { url: shape('#22d3ee', 'B'), label: 'Cyan' },
+        { url: shape('#f59e0b', 'C'), label: 'Orange' }
+      ],
+      answer: 1
+    },
+    points: 2
+  },
+  {
+    type: 'image_order',
+    prompt: 'Remettez les étapes du démarrage dans l\'ordre.',
+    i18n: { en: { prompt: 'Put the boot steps back in order.' } },
+    data: {
+      items: [
+        { id: 's1', url: shape('#6366f1', '1'), caption: 'Mise sous tension' },
+        { id: 's2', url: shape('#22d3ee', '2'), caption: 'Le BIOS teste le matériel' },
+        { id: 's3', url: shape('#f59e0b', '3'), caption: 'Chargement du système' },
+        { id: 's4', url: shape('#34d399', '4'), caption: 'Session ouverte' }
+      ],
+      answer: ['s1', 's2', 's3', 's4']
+    },
+    points: 4
+  },
+  {
+    type: 'mcq_single',
+    prompt: 'D\'après le schéma, combien de barrettes de RAM sont représentées ?',
+    media: { url: boardSvg, alt: 'Schéma d\'une carte mère', kind: 'image' },
+    data: { options: ['1', '2', '3', '4'], answer: 1 },
+    explanation: 'Une question classique peut aussi porter une illustration.',
+    points: 2
+  }
+]);
+
 quiz(cAlgo, {
   title: 'Cartes de révision — vocabulaire',
   kind: 'flashcards', difficulty: 'easy'

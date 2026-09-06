@@ -12,6 +12,39 @@ const opts = q => i18n.pick(q, 'options', q.data.options) || [];
 
 export function typeLabel(type) { return t(`qtype.${type}`); }
 
+/**
+ * Illustration attached to any question — an image, a diagram, a short clip or
+ * an audio sample. Rendered above the answer area by the player and the review
+ * screen, so every type can be visual without a type of its own.
+ */
+export function renderMedia(media) {
+  if (!media) return '';
+  const m = typeof media === 'string' ? { url: media, kind: 'image' } : media;
+  if (!m.url) return '';
+  const alt = esc(m.alt || '');
+  const body =
+    m.kind === 'video' ? `<video controls preload="metadata" src="${esc(m.url)}"></video>`
+    : m.kind === 'audio' ? `<audio controls preload="metadata" src="${esc(m.url)}"></audio>`
+    : `<img src="${esc(m.url)}" alt="${alt}" loading="lazy">`;
+  return `<figure class="q-media">${body}${m.alt ? `<figcaption>${alt}</figcaption>` : ''}</figure>`;
+}
+
+/**
+ * Percentage position of a pointer event inside an element, clamped to 0-100.
+ * Returns null when the box has no size — recording 0,0 from a collapsed image
+ * would silently mark the answer wrong instead of doing nothing.
+ */
+function pointPercent(el, event) {
+  const r = el.getBoundingClientRect();
+  if (!r.width || !r.height) return null;
+  const src = event.touches?.[0] ?? event.changedTouches?.[0] ?? event;
+  if (src?.clientX === undefined) return null;
+  return {
+    x: Math.max(0, Math.min(100, ((src.clientX - r.left) / r.width) * 100)),
+    y: Math.max(0, Math.min(100, ((src.clientY - r.top) / r.height) * 100))
+  };
+}
+
 export function render(q, value) {
   const d = q.data || {};
   switch (q.type) {
@@ -115,6 +148,79 @@ export function render(q, value) {
           </div>`).join('')}</div>`;
     }
 
+    /* ---------------------------------------------------------------- image */
+
+    case 'image_choice': {
+      const multi = !!d.multiple;
+      const sel = multi ? new Set((value || []).map(Number)) : new Set([Number(value)]);
+      return `
+        <div class="muted small mb">${t(multi ? 'q.selectMany' : 'q.selectOne')}</div>
+        <div class="img-grid">
+          ${(d.options || []).map((o, i) => `
+            <button type="button" class="img-tile ${sel.has(i) ? 'selected' : ''}" data-img-opt="${i}">
+              <img src="${esc(o.url)}" alt="${esc(o.label || '')}" loading="lazy">
+              <span class="img-tile-tick">${sel.has(i) ? '✓' : LETTERS[i]}</span>
+              ${o.label ? `<span class="img-tile-label">${esc(o.label)}</span>` : ''}
+            </button>`).join('')}
+        </div>`;
+    }
+
+    case 'image_hotspot': {
+      const p = value && typeof value === 'object' ? value : null;
+      return `
+        <div class="muted small mb">${t('q.clickImage')}</div>
+        <div class="img-canvas" data-hotspot>
+          <img src="${esc(d.image)}" alt="${esc(d.imageAlt || '')}">
+          ${p ? `<span class="img-pin" style="inset-inline-start:${p.x}%;inset-block-start:${p.y}%"></span>` : ''}
+        </div>
+        <div class="tiny muted mt" data-hotspot-status>${p ? t('q.pinPlaced') : ''}</div>`;
+    }
+
+    case 'image_label': {
+      const map = value || {};
+      const markers = d.markers || [];
+      const labels = d.labels || [];
+      return `
+        <div class="muted small mb">${t('q.labelMarkers')}</div>
+        <div class="img-canvas">
+          <img src="${esc(d.image)}" alt="${esc(d.imageAlt || '')}">
+          ${markers.map((m, i) => `
+            <span class="img-marker ${map[m.id] ? 'done' : ''}"
+                  style="inset-inline-start:${m.x}%;inset-block-start:${m.y}%"
+                  data-marker-dot="${esc(m.id)}">${i + 1}</span>`).join('')}
+        </div>
+        <div class="stack mt">
+          ${markers.map((m, i) => `
+            <label class="row marker-row">
+              <span class="marker-num">${i + 1}</span>
+              <select data-marker="${esc(m.id)}" style="flex:1">
+                <option value="">—</option>
+                ${labels.map(l => `<option ${map[m.id] === l ? 'selected' : ''}>${esc(l)}</option>`).join('')}
+              </select>
+            </label>`).join('')}
+        </div>`;
+    }
+
+    case 'image_order': {
+      const items = value?.length
+        ? value.map(id => (d.items || []).find(i => String(i.id) === String(id))).filter(Boolean)
+        : (d.items || []);
+      return `
+        <div class="muted small mb">${t('q.dragToOrder')}</div>
+        <div class="img-order" data-img-order>
+          ${items.map((it, i) => `
+            <div class="img-order-item" data-item-id="${esc(it.id)}">
+              <span class="img-order-rank">${i + 1}</span>
+              <img src="${esc(it.url)}" alt="${esc(it.caption || '')}" loading="lazy">
+              ${it.caption ? `<span class="img-order-caption">${esc(it.caption)}</span>` : ''}
+              <span class="img-order-moves">
+                <button type="button" class="btn btn-sm" data-img-up="${i}" ${i === 0 ? 'disabled' : ''}>↑</button>
+                <button type="button" class="btn btn-sm" data-img-down="${i}" ${i === items.length - 1 ? 'disabled' : ''}>↓</button>
+              </span>
+            </div>`).join('')}
+        </div>`;
+    }
+
     case 'code_output':
       return `
         <pre>${esc(d.code || '')}</pre>
@@ -162,7 +268,8 @@ export function render(q, value) {
             <tr>
               ${inputs.map((_, c) => `<td class="mono">${(r >> (inputs.length - 1 - c)) & 1}</td>`).join('')}
               <td>
-                <button class="btn btn-sm" data-tt="${r}">${vals[r] === true ? '1' : vals[r] === false ? '0' : '?'}</button>
+                <button type="button" class="btn btn-sm tt-cell ${vals[r] === true || vals[r] === false ? 'answered' : ''}"
+                        data-tt="${r}">${vals[r] === true ? '1' : vals[r] === false ? '0' : '?'}</button>
               </td>
             </tr>`).join('')}</tbody>
         </table></div>`;
@@ -177,11 +284,12 @@ export function render(q, value) {
         `).join('')}</div>`;
 
     case 'flashcard':
+      // The prompt is already shown by the player above this block, so the card
+      // only carries the hidden answer side.
       return `
-        <div class="card center" style="background:var(--surface-2)">
-          <div style="font-size:1.15rem;font-weight:600">${esc(prompt(q))}</div>
-          <div data-back class="hidden mt">${esc(q.data.back || '')}</div>
-          <button class="btn mt" data-flip>${t('flash.showAnswer')}</button>
+        <div class="card center flash-face">
+          <div data-back class="hidden">${esc(q.data.back || '')}</div>
+          <button type="button" class="btn" data-flip>${t('flash.showAnswer')}</button>
         </div>
         <div class="row mt" data-conf>
           ${[[0, 'flash.again'], [3, 'flash.hard'], [4, 'flash.good'], [5, 'flash.easy']].map(([c, k]) =>
@@ -266,12 +374,16 @@ export function bind(el, q, value, onSet) {
       const swap = (i, j) => {
         [items[i], items[j]] = [items[j], items[i]];
         onSet(items);
-        const host = el.querySelector('[data-order]').parentElement;
-        host.innerHTML = render({ ...q, data: { ...d, items } }, items);
-        bind(host, q, items, onSet);
+        // Re-render into the same host we were bound to; reaching for
+        // parentElement broke whenever the caller changed the wrapper.
+        el.innerHTML = render({ ...q, data: { ...d, items } }, items);
+        bind(el, q, items, onSet);
       };
       $$('[data-up]').forEach(b => b.onclick = () => swap(Number(b.dataset.up), Number(b.dataset.up) - 1));
       $$('[data-down]').forEach(b => b.onclick = () => swap(Number(b.dataset.down), Number(b.dataset.down) + 1));
+      // The order on screen is already a candidate answer — record it so a
+      // student who judges it correct and submits untouched is not marked blank.
+      if (!value?.length) onSet([...items]);
       break;
     }
 
@@ -322,6 +434,91 @@ export function bind(el, q, value, onSet) {
       break;
     }
 
+    /* ---------------------------------------------------------------- image */
+
+    case 'image_choice': {
+      const multi = !!d.multiple;
+      const sel = new Set(multi ? (value || []).map(Number) : []);
+      $$('[data-img-opt]').forEach(tile => tile.onclick = () => {
+        const i = Number(tile.dataset.imgOpt);
+        if (!multi) {
+          $$('[data-img-opt]').forEach((x, xi) => {
+            x.classList.toggle('selected', xi === i);
+            x.querySelector('.img-tile-tick').textContent = xi === i ? '✓' : LETTERS[xi];
+          });
+          return onSet(i);
+        }
+        sel.has(i) ? sel.delete(i) : sel.add(i);
+        tile.classList.toggle('selected', sel.has(i));
+        tile.querySelector('.img-tile-tick').textContent = sel.has(i) ? '✓' : LETTERS[i];
+        onSet([...sel]);
+      });
+      break;
+    }
+
+    case 'image_hotspot': {
+      const canvas = el.querySelector('[data-hotspot]');
+      const status = el.querySelector('[data-hotspot-status]');
+      const place = event => {
+        event.preventDefault();
+        // Measure the image, not the canvas: percentages for absolutely
+        // positioned pins resolve against the padding box, so using a box that
+        // includes the border would offset every click by the border width.
+        const p = pointPercent(canvas.querySelector('img') || canvas, event);
+        if (!p) return;
+        canvas.querySelector('.img-pin')?.remove();
+        const pin = document.createElement('span');
+        pin.className = 'img-pin';
+        pin.style.insetInlineStart = `${p.x}%`;
+        pin.style.insetBlockStart = `${p.y}%`;
+        canvas.appendChild(pin);
+        if (status) status.textContent = t('q.pinPlaced');
+        onSet({ x: +p.x.toFixed(2), y: +p.y.toFixed(2) });
+      };
+      canvas.onclick = place;
+      // Touch devices fire click too, but this keeps the pin from lagging.
+      canvas.ontouchend = place;
+      break;
+    }
+
+    case 'image_label': {
+      const map = { ...(value || {}) };
+      const paint = () => $$('[data-marker-dot]').forEach(dot =>
+        dot.classList.toggle('done', !!map[dot.dataset.markerDot]));
+      $$('[data-marker]').forEach(sel => sel.onchange = e => {
+        const id = sel.dataset.marker;
+        if (e.target.value) map[id] = e.target.value; else delete map[id];
+        paint();
+        onSet(map);
+      });
+      // Clicking a dot on the image jumps to its dropdown — much easier than
+      // hunting for the matching row on a phone.
+      $$('[data-marker-dot]').forEach(dot => dot.onclick = () => {
+        const target = el.querySelector(`[data-marker="${CSS.escape(dot.dataset.markerDot)}"]`);
+        target?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        target?.focus();
+      });
+      break;
+    }
+
+    case 'image_order': {
+      let items = value?.length
+        ? value.map(id => (d.items || []).find(i => String(i.id) === String(id))).filter(Boolean)
+        : [...(d.items || [])];
+      const move = (from, to) => {
+        [items[from], items[to]] = [items[to], items[from]];
+        const order = items.map(i => i.id);
+        onSet(order);
+        el.innerHTML = render(q, order);
+        bind(el, q, order, onSet);
+      };
+      $$('[data-img-up]').forEach(b => b.onclick = () => move(Number(b.dataset.imgUp), Number(b.dataset.imgUp) - 1));
+      $$('[data-img-down]').forEach(b => b.onclick = () => move(Number(b.dataset.imgDown), Number(b.dataset.imgDown) + 1));
+      // An order is only meaningful once submitted, so seed it immediately.
+      if (!value?.length) onSet(items.map(i => i.id));
+      break;
+    }
+
     case 'bug_find':
       $$('[data-line]').forEach(l => l.onclick = () => {
         $$('[data-line]').forEach(x => x.classList.remove('selected'));
@@ -331,12 +528,17 @@ export function bind(el, q, value, onSet) {
       break;
 
     case 'truth_table': {
-      const vals = [...(value || [])];
+      const rows = 2 ** (d.inputs?.length ?? 2);
+      // Fixed-length and null-filled: an untouched cell must stay unanswered
+      // rather than collapsing to `false` and earning accidental credit.
+      const vals = Array.from({ length: rows }, (_, i) =>
+        typeof value?.[i] === 'boolean' ? value[i] : null);
       $$('[data-tt]').forEach(b => b.onclick = () => {
         const r = Number(b.dataset.tt);
-        vals[r] = vals[r] === true ? false : vals[r] === false ? undefined : true;
+        vals[r] = vals[r] === true ? false : vals[r] === false ? null : true;
         b.textContent = vals[r] === true ? '1' : vals[r] === false ? '0' : '?';
-        onSet(vals.map(v => v === true));
+        b.classList.toggle('answered', vals[r] !== null);
+        onSet([...vals]);
       });
       break;
     }
@@ -409,10 +611,58 @@ export function runOutput(r) {
 }
 
 /** Read-only rendering of one graded question, used on the review screen. */
-export function renderReview(item, question) {
+export function renderReview(item) {
   const cls = item.correct ? 'success' : item.score > 0 ? 'warning' : 'danger';
-  const fmt = v => v == null ? '—' : typeof v === 'object' ? esc(JSON.stringify(v)) : esc(v);
   const d = item.details || {};
+
+  /** Turn a stored answer into something a student can actually read. */
+  const optionName = i => {
+    const o = item.options?.[i];
+    if (o == null) return `#${Number(i) + 1}`;
+    return typeof o === 'string' ? o : (o.label || o.caption || `#${Number(i) + 1}`);
+  };
+  const fmt = v => {
+    if (v == null || v === '') return '—';
+    if (item.options && (typeof v === 'number' || typeof v === 'string') && !Number.isNaN(Number(v))) {
+      return esc(optionName(Number(v)));
+    }
+    if (item.options && Array.isArray(v)) return esc(v.map(i => optionName(Number(i))).join(', '));
+    if (item.type === 'image_hotspot' && v?.x !== undefined) return '📍';
+    if (Array.isArray(v)) return esc(v.map(x => (x == null ? '—' : x)).join(' → '));
+    if (typeof v === 'object') {
+      return esc(Object.entries(v).map(([k, val], i) => `${i + 1}. ${val}`).join(' · ')) || '—';
+    }
+    return esc(v);
+  };
+
+  /** For image choices, show the pictures rather than describing them. */
+  const thumb = (i, kind) => {
+    const o = item.options?.[Number(i)];
+    if (!o?.url) return '';
+    return `<figure class="review-thumb ${kind}">
+        <img src="${esc(o.url)}" alt="${esc(o.label || '')}" loading="lazy">
+        <figcaption>${esc(o.label || '')}</figcaption>
+      </figure>`;
+  };
+  const chosen = [].concat(item.yourAnswer ?? []).filter(v => v !== null && v !== '');
+  const wanted = [].concat(d.expected ?? []).filter(v => v !== null && v !== '');
+  const imageAnswers = item.type === 'image_choice' && item.options
+    ? `<div class="review-thumbs">
+         ${chosen.map(i => thumb(i, item.correct ? 'ok' : 'bad')).join('')}
+         ${!item.correct ? wanted.map(i => thumb(i, 'want')).join('') : ''}
+       </div>` : '';
+
+  // Image answers read as coordinates in JSON; show them on the picture instead.
+  const spatial = item.type === 'image_hotspot' && d.point
+    ? `<div class="img-canvas review">
+         <img src="${esc(item.image || d.image || '')}" alt="">
+         ${(d.zones || []).map(z => `<span class="img-zone" style="
+             inset-inline-start:${z.x}%;inset-block-start:${z.y}%;
+             inline-size:${z.w}%;block-size:${z.h}%"></span>`).join('')}
+         <span class="img-pin ${item.correct ? 'ok' : 'bad'}"
+               style="inset-inline-start:${d.point.x}%;inset-block-start:${d.point.y}%"></span>
+       </div>` : '';
+
   return `
     <div class="q-card mb">
       <div class="between mb">
@@ -420,6 +670,9 @@ export function renderReview(item, question) {
         <span class="badge badge-${cls}">${item.earned}/${item.points} ${t('common.points')}</span>
       </div>
       <div class="q-prompt">${esc(item.prompt)}</div>
+      ${renderMedia(item.media)}
+      ${spatial}
+      ${imageAnswers}
       <div class="small"><strong>${t('quiz.yourAnswer')}:</strong> <span class="mono">${fmt(item.yourAnswer)}</span></div>
       ${!item.correct && d.expected !== undefined
         ? `<div class="small"><strong>${t('quiz.expected')}:</strong> <span class="mono">${fmt(d.expected)}</span></div>` : ''}

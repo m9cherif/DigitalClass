@@ -6,11 +6,15 @@ plain Node.js — no build step, no framework, no external database.
 
 ## Highlights
 
-- **20 quiz question types**, all auto-graded server-side: single/multiple choice,
+- **24 quiz question types**, all auto-graded server-side: single/multiple choice,
   true/false, short answer, numeric, fill-in-the-blanks, matching, ordering,
   categorize, code output, write code (sandboxed JS with hidden tests), fix code,
   find the bug, SQL query, terminal command, base conversion, truth table,
   clickable hotspot, flashcard (spaced repetition) and essay (teacher-graded).
+- **Visual questions**: pick the right image, **click a spot on a diagram**,
+  **label a diagram** point by point, and put images in order. On top of that any
+  question of any type can carry an illustration — image, diagram, video or audio.
+  Teachers author them by clicking directly on the picture; see **Image questions**.
 - **Live quiz "parties"** — Kahoot-style multiplayer over Socket.IO: a 6-character
   PIN, synchronized question rounds, speed + streak scoring, team/survival/marathon
   modes, reactions, and a podium at the end.
@@ -190,6 +194,32 @@ peers may fail to connect without a TURN relay — set `TURN_URL`, `TURN_USER` a
 mesh, capped at 16 participants (`MAX_PARTICIPANTS` in `server/lib/live.js`);
 beyond that you would want an SFU.
 
+## Image questions
+
+Four types are built around a picture, and all of them are authored by clicking
+on the image itself rather than by typing coordinates:
+
+| Type | The student… | The teacher… |
+|---|---|---|
+| `image_choice` | picks the right picture from a grid | uploads images, marks the correct one(s) |
+| `image_hotspot` | clicks the right spot on a diagram | clicks to drop zones, marks which is correct |
+| `image_label` | gives each numbered point its label | clicks to drop points, picks each one's label |
+| `image_order` | puts pictures into the right order | uploads them already in order |
+
+Any question, of any type, can also carry a `media` illustration shown above the
+prompt (`{ url, kind, alt }`, or just a URL — `kind` is inferred from the
+extension when omitted).
+
+Two details worth knowing:
+
+- **Answers never reach the browser.** Hotspot zones and label answers are
+  stripped by `sanitize()`, so a student cannot read the target out of the
+  markup. A hotspot click is submitted as `{ x, y }` percentages and the server
+  decides which zone it landed in.
+- **Coordinates are percentages of the image box**, which is why the CSS gives
+  the image an explicit width and lets it set its own height. Capping the height
+  instead would letterbox it and silently shift every click.
+
 ## Notes on the code sandbox
 
 `code_write` / `code_fix` questions run student JavaScript in a `vm` context
@@ -201,7 +231,9 @@ isolate if abuse is a concern.
 ## Extending
 
 - New question type: add it to `server/quiz/types.js`, a `case` in
-  `server/quiz/grader.js`, and a `case` in both `render()`/`bind()` in
-  `public/js/questions.js`.
+  `server/quiz/grader.js`, a `case` in both `render()`/`bind()` in
+  `public/js/questions.js`, and the authoring fields in `questionEditor()`
+  (`public/js/views/quiz.js`). If it hides an answer key, extend `sanitize()` in
+  `server/routes/quizzes.js` too.
 - New language: add `public/locales/<code>.json` (copy `en.json` as a
   template) and add it to `LANGS` in `public/js/core.js`.
