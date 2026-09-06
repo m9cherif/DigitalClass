@@ -34,8 +34,10 @@ setInterval(() => {
 }, WINDOW).unref();
 
 app.use('/api', (req, res, next) => {
-  const login = ['/auth/login', '/auth/register', '/auth/verify-email', '/auth/resend-otp']
-    .some(p => req.path.startsWith(p));
+  const login = [
+    '/auth/login', '/auth/register', '/auth/verify', '/auth/resend-otp',
+    '/auth/phone/register', '/auth/phone/login'
+  ].some(p => req.path.startsWith(p));
   const key = `${req.ip}:${login ? 'auth' : 'api'}`;
   const limit = login ? 20 : 600;
   const rec = hits.get(key);

@@ -220,7 +220,7 @@ router.get('/users', requireRole('admin'), (req, res) => {
   const { role, q = '' } = req.query;
   let rows = db.users.all();
   if (role) rows = rows.filter(u => u.role === role);
-  if (q) rows = rows.filter(u => (u.name + u.email).toLowerCase().includes(String(q).toLowerCase()));
+  if (q) rows = rows.filter(u => (u.name + (u.email || '') + (u.phone || '')).toLowerCase().includes(String(q).toLowerCase()));
   res.json({ users: rows.map(publicUser) });
 });
 
@@ -264,12 +264,15 @@ router.post('/backup', requireRole('admin'), (_req, res) => {
  *  recreates the calling admin's own account with a fresh random password —
  *  a wipe must never lock every admin out of the platform it just reset. */
 router.post('/wipe-all', requireRole('admin'), async (req, res) => {
-  const { name, email, lang, theme } = req.user;
+  const { name, email, phone, lang, theme } = req.user;
   for (const collection of COLLECTIONS) db[collection].clear();
 
+  // A phone-only admin has no password to begin with — recreate one anyway
+  // so the account is never left without a way to authenticate at all, even
+  // though normal phone login never uses it.
   const password = crypto.randomBytes(9).toString('base64url');
   const admin = db.users.insert({
-    name, email, password: hashPassword(password), role: 'admin', status: 'active',
+    name, email, phone, password: hashPassword(password), role: 'admin', status: 'active', verified: true,
     avatar: null, bio: '', xp: 0, level: 1, streak: 0, longestStreak: 0,
     childIds: [], lang: lang || 'fr', theme: theme || 'dark'
   });
