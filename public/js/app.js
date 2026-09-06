@@ -26,7 +26,7 @@ function chrome() {
   const nav = [
     { href: '/', icon: u.role === 'admin' ? 'gear' : 'home',
       label: u.role === 'admin' ? t('nav.admin') : t('nav.dashboard'), primary: true },
-    { href: '/classes', icon: 'classes', label: t('nav.courses'), primary: true },
+    { href: '/classes', icon: 'classes', label: t('classes.hub'), primary: true },
     ...(plays ? [{ href: '/party', icon: 'party', label: t('nav.party'), primary: true }] : []),
     { href: '/forum', icon: 'forum', label: t('nav.forum'), primary: !plays },
     { href: '/messages', icon: 'mail', label: t('nav.messages'), primary: true },
