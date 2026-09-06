@@ -383,7 +383,7 @@ export async function adminView(_p, out) {
           <div class="between" style="padding:.35rem 0">
             <span class="row">${avatar(u)} <span>
               <strong class="small">${esc(u.name)}</strong>
-              <div class="tiny muted">${esc(u.email || u.phone || '')}</div></span></span>
+              <div class="tiny muted">${esc(u.email)}</div></span></span>
             <span class="badge">${t('auth.role.' + u.role)}</span>
           </div>`).join('')}
       </div>`,
@@ -435,14 +435,14 @@ export async function adminView(_p, out) {
   const drawUsers = (filter = '') => {
     const list = out.querySelector('#ulist');
     if (!list) return;
-    const rows = users.filter(u => (u.name + (u.email || '') + (u.phone || '')).toLowerCase().includes(filter));
+    const rows = users.filter(u => (u.name + u.email).toLowerCase().includes(filter));
     list.innerHTML = rows.length ? rows.map(u => `
       <div class="user-row">
         <span class="row" style="flex:1;min-inline-size:0">
           ${avatar(u)}
           <span style="min-inline-size:0">
             <strong class="small">${esc(u.name)}</strong>
-            <div class="tiny muted ellipsis">${esc(u.email || u.phone || '')}</div>
+            <div class="tiny muted ellipsis">${esc(u.email)}</div>
           </span>
         </span>
         <select data-role="${u.id}" class="role-select">

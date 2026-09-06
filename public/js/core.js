@@ -130,27 +130,13 @@ export const session = {
   },
 
   /** Returns { pendingVerification, userId, email } — no session yet until
-   *  the emailed code is confirmed via verifyOtp(). */
+   *  the emailed code is confirmed via verifyEmail(). */
   async register(payload) {
     return api.post('/auth/register', { ...payload, lang: i18n.lang });
   },
 
-  /** Same shape as register(), but for a phone account (no password) —
-   *  returns { pendingVerification, userId, phone }. */
-  async phoneRegister(payload) {
-    return api.post('/auth/phone/register', { ...payload, lang: i18n.lang });
-  },
-
-  /** Phone login never checks a password — this just sends a fresh OTP to
-   *  an existing account. Returns { pendingVerification, userId, phone }. */
-  async phoneLogin(phone) {
-    return api.post('/auth/phone/login', { phone });
-  },
-
-  /** The one OTP-check call behind email verification, phone verification,
-   *  and every phone login. */
-  async verifyOtp(userId, code) {
-    const r = await api.post('/auth/verify', { userId, code });
+  async verifyEmail(userId, code) {
+    const r = await api.post('/auth/verify-email', { userId, code });
     api.setToken(r.token);
     await this.refresh();
     connectSocket();

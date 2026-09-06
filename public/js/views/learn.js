@@ -34,13 +34,11 @@ export function authView(mode) {
     });
 
     const card = out.querySelector('#authCard');
-    let identifier = 'email'; // or 'phone' — mutually exclusive per account
 
-    const renderOtp = ({ userId, email, phone }) => {
-      const contact = email || phone;
+    const renderOtp = ({ userId, email }) => {
       card.innerHTML = `
         <h2>${t('auth.otpTitle')}</h2>
-        <p class="small muted">${t('auth.otpHint', { contact: esc(contact) })}</p>
+        <p class="small muted">${t('auth.otpHint', { email: esc(email) })}</p>
         <form id="otpForm">
           <div class="field">
             <input name="code" class="code-input" maxlength="6" inputmode="numeric" autocomplete="one-time-code" required dir="ltr" placeholder="000000">
@@ -56,7 +54,7 @@ export function authView(mode) {
         const err = out.querySelector('#otpErr');
         err.textContent = '';
         try {
-          await session.verifyOtp(userId, code);
+          await session.verifyEmail(userId, code);
           document.dispatchEvent(new CustomEvent('dc:auth'));
           router.go('/');
         } catch (ex) {
@@ -76,13 +74,8 @@ export function authView(mode) {
     };
 
     const renderForm = () => {
-      const isPhone = identifier === 'phone';
       card.innerHTML = `
         <h2>${t(isLogin ? 'auth.login' : 'auth.register')}</h2>
-        <div class="row mb">
-          <button type="button" class="chip ${!isPhone ? 'selected' : ''}" data-id="email">${t('auth.byEmail')}</button>
-          <button type="button" class="chip ${isPhone ? 'selected' : ''}" data-id="phone">${t('auth.byPhone')}</button>
-        </div>
         <form id="authForm">
           ${isLogin ? '' : `
             <div class="field"><label>${t('auth.name')}</label><input name="name" required></div>
@@ -93,13 +86,8 @@ export function authView(mode) {
                 <option value="parent">${t('auth.role.parent')}</option>
                 <option value="admin">${t('auth.role.admin')}</option>
               </select></div>`}
-          ${isPhone
-            ? `<div class="field"><label>${t('auth.phone')}</label>
-                 <input name="phone" type="tel" required dir="ltr" placeholder="+212612345678"></div>`
-            : `<div class="field"><label>${t('auth.email')}</label><input name="email" type="email" required dir="ltr"></div>`}
-          ${(!isPhone) ? `
-            <div class="field"><label>${t('auth.password')}</label><input name="password" type="password" required minlength="8" dir="ltr"></div>` : `
-            <p class="tiny muted">${t('auth.phoneOtpHint')}</p>`}
+          <div class="field"><label>${t('auth.email')}</label><input name="email" type="email" required dir="ltr"></div>
+          <div class="field"><label>${t('auth.password')}</label><input name="password" type="password" required minlength="8" dir="ltr"></div>
           <div id="authErr" class="small mb" style="color:var(--danger)"></div>
           <button class="btn btn-primary btn-block btn-lg">${t(isLogin ? 'auth.login' : 'auth.register')}</button>
         </form>
@@ -108,21 +96,13 @@ export function authView(mode) {
           <a href="${isLogin ? '/register' : '/login'}">${t(isLogin ? 'auth.register' : 'auth.login')}</a>
         </div>`;
 
-      out.querySelectorAll('[data-id]').forEach(b => b.onclick = () => {
-        identifier = b.dataset.id;
-        renderForm();
-      });
-
       out.querySelector('#authForm').onsubmit = async e => {
         e.preventDefault();
         const f = Object.fromEntries(new FormData(e.target));
         const err = out.querySelector('#authErr');
         err.textContent = '';
         try {
-          if (isPhone) {
-            const r = isLogin ? await session.phoneLogin(f.phone) : await session.phoneRegister(f);
-            renderOtp(r);
-          } else if (isLogin) {
+          if (isLogin) {
             await session.login(f.email, f.password);
             document.dispatchEvent(new CustomEvent('dc:auth'));
             router.go('/');
