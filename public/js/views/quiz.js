@@ -210,7 +210,7 @@ export async function attemptView({ id }, out) {
 export async function quizEditView({ id }, out) {
   const data = await api.get(`/quizzes/${id}`);
   const quiz = data.quiz;
-  const { types } = await api.get('/quizzes/types');
+  const { types, groups } = await api.get('/quizzes/types');
 
   const draw = async () => {
     const fresh = await api.get(`/quizzes/${id}`);
@@ -260,9 +260,9 @@ export async function quizEditView({ id }, out) {
               ? 'badge-success' : ''}">${esc(o)}</span>`).join('')}</div>` : ''}
         </div>`).join('') || `<div class="empty-state">${t('common.empty')}</div>`}</div>`;
 
-    out.querySelector('#add').onclick = () => questionEditor(id, types, null, draw);
+    out.querySelector('#add').onclick = () => questionEditor(id, types, null, draw, groups);
     out.querySelectorAll('[data-edit]').forEach(b => b.onclick = () =>
-      questionEditor(id, types, d.questions.find(q => q.id === b.dataset.edit), draw));
+      questionEditor(id, types, d.questions.find(q => q.id === b.dataset.edit), draw, groups));
     out.querySelectorAll('[data-del]').forEach(b => b.onclick = async () => {
       if (!confirm(t('common.delete') + ' ?')) return;
       await api.del(`/quizzes/questions/${b.dataset.del}`);
@@ -358,7 +358,7 @@ function clickPercent(el, event) {
   };
 }
 
-function questionEditor(quizId, types, existing, done) {
+function questionEditor(quizId, types, existing, done, groups) {
   const q = existing || { type: 'mcq_single', prompt: '', points: 1, data: { options: ['', ''], answer: 0 }, explanation: '' };
   // Working copy for the click-driven image editors, which build their data
   // structurally rather than from text inputs.
@@ -485,8 +485,13 @@ function questionEditor(quizId, types, existing, done) {
   const { root, close } = modal(`
     <h2>${existing ? t('common.edit') : t('quiz.addQuestion')}</h2>
     <div class="field"><label>Type</label>
-      <select id="type">${types.map(x =>
-        `<option value="${x.id}" ${q.type === x.id ? 'selected' : ''}>${t('qtype.' + x.id)}</option>`).join('')}</select></div>
+      <select id="type">${
+        // Grouped: a flat list of two dozen types is hard to scan.
+        (groups?.length ? groups : [{ group: 'all', types: types.map(x => x.id) }]).map(g => `
+          <optgroup label="${esc(t('qgroup.' + g.group))}">
+            ${g.types.map(id =>
+              `<option value="${id}" ${q.type === id ? 'selected' : ''}>${t('qtype.' + id)}</option>`).join('')}
+          </optgroup>`).join('')}</select></div>
     <div class="field"><label>${t('quiz.question')}</label><textarea id="prompt">${esc(q.prompt)}</textarea></div>
     <details class="field build-media" ${q.media ? 'open' : ''}>
       <summary>🖼️ ${t('build.illustration')}</summary>
