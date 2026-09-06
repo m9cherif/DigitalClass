@@ -34,6 +34,7 @@ export function authView(mode) {
                   <option value="student">${t('auth.role.student')}</option>
                   <option value="teacher">${t('auth.role.teacher')}</option>
                   <option value="parent">${t('auth.role.parent')}</option>
+                  <option value="admin">${t('auth.role.admin')}</option>
                 </select></div>`}
             <div class="field"><label>${t('auth.email')}</label><input name="email" type="email" required dir="ltr"></div>
             <div class="field"><label>${t('auth.password')}</label><input name="password" type="password" required minlength="8" dir="ltr"></div>

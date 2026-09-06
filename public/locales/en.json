@@ -30,6 +30,7 @@
   "auth.bad_credentials": "Wrong email or password.",
   "auth.email_taken": "That email is already registered.",
   "auth.weak_password": "Password must be at least 8 characters.",
+  "auth.invalid_role": "An administrator account already exists — ask them to create your account from the admin console.",
   "common.search": "Search",
   "common.save": "Save",
   "common.cancel": "Cancel",

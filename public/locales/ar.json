@@ -30,6 +30,7 @@
   "auth.bad_credentials": "البريد الإلكتروني أو كلمة المرور غير صحيحة.",
   "auth.email_taken": "هذا البريد مستعمل من قبل.",
   "auth.weak_password": "يجب أن تحتوي كلمة المرور على 8 أحرف على الأقل.",
+  "auth.invalid_role": "يوجد حساب مدير بالفعل — اطلب منه إنشاء حسابك من لوحة الإدارة.",
   "common.search": "بحث",
   "common.save": "حفظ",
   "common.cancel": "إلغاء",
