@@ -307,6 +307,7 @@
   "admin.wipeAllHint": "This permanently deletes every user, class, course, quiz, attempt and party. It cannot be undone. Type DELETE to confirm.",
   "admin.wipeConfirmLabel": "Type DELETE to confirm",
   "admin.wipeAllDone": "All data has been erased.",
+  "admin.wipeNewPasswordHint": "Your account was recreated so you can still get in. This is your new temporary password — copy it now, it will not be shown again. Change it from your profile once you're in.",
   "cert.title": "Certificate of completion",
   "cert.awardedTo": "Awarded to",
   "cert.forCompleting": "for completing the course",

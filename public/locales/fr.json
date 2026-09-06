@@ -307,6 +307,7 @@
   "admin.wipeAllHint": "Ceci supprime définitivement tous les utilisateurs, classes, cours, quiz, tentatives et parties. C'est irréversible. Tapez DELETE pour confirmer.",
   "admin.wipeConfirmLabel": "Tapez DELETE pour confirmer",
   "admin.wipeAllDone": "Toutes les données ont été effacées.",
+  "admin.wipeNewPasswordHint": "Votre compte a été recréé pour que vous puissiez toujours vous connecter. Voici votre nouveau mot de passe temporaire — copiez-le maintenant, il ne sera plus jamais affiché. Changez-le depuis votre profil une fois connecté.",
   "cert.title": "Certificat de réussite",
   "cert.awardedTo": "Décerné à",
   "cert.forCompleting": "pour avoir terminé le cours",

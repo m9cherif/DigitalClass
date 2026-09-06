@@ -479,9 +479,15 @@ export async function adminView(_p, out) {
       input.oninput = () => { btn.disabled = input.value !== 'DELETE'; };
       btn.onclick = async () => {
         if (!confirm(t('admin.wipeAllHint'))) return;
-        await api.post('/wipe-all', {});
-        toast('✅ ' + t('admin.wipeAllDone'), 'success');
-        session.logout();
+        const r = await api.post('/wipe-all', {});
+        api.setToken(r.token);
+        await session.refresh();
+        modal(`
+          <h2>${t('admin.wipeAllDone')}</h2>
+          <p class="small muted">${t('admin.wipeNewPasswordHint')}</p>
+          <div class="code-value" style="user-select:all">${esc(r.temporaryPassword)}</div>
+          <button class="btn btn-primary mt" data-close>${t('common.close')}</button>`);
+        router.go('/');
       };
     }
   };

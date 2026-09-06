@@ -3,7 +3,8 @@ import multer from 'multer';
 import { db, flushAll, COLLECTIONS } from '../lib/db.js';
 import { UPLOAD_DIR } from '../lib/uploads.js';
 import { QUESTION_TYPES } from '../quiz/types.js';
-import { publicUser, requireAuth, requireRole, hashPassword, canEditCourse } from '../middleware/auth.js';
+import crypto from 'node:crypto';
+import { publicUser, requireAuth, requireRole, hashPassword, canEditCourse, signToken } from '../middleware/auth.js';
 import { listRooms } from '../lib/party.js';
 
 const router = Router();
@@ -259,12 +260,25 @@ router.post('/backup', requireRole('admin'), (_req, res) => {
   res.json({ ok: true, collections: COLLECTIONS, at: new Date().toISOString() });
 });
 
-/** Irreversible: erases every row in every collection. Used to reset the
- *  platform between school years or to clear out test data before launch. */
-router.post('/wipe-all', requireRole('admin'), async (_req, res) => {
-  for (const name of COLLECTIONS) db[name].clear();
+/** Irreversible: erases every row in every collection, then immediately
+ *  recreates the calling admin's own account with a fresh random password —
+ *  a wipe must never lock every admin out of the platform it just reset. */
+router.post('/wipe-all', requireRole('admin'), async (req, res) => {
+  const { name, email, lang, theme } = req.user;
+  for (const collection of COLLECTIONS) db[collection].clear();
+
+  const password = crypto.randomBytes(9).toString('base64url');
+  const admin = db.users.insert({
+    name, email, password: hashPassword(password), role: 'admin', status: 'active',
+    avatar: null, bio: '', xp: 0, level: 1, streak: 0, longestStreak: 0,
+    childIds: [], lang: lang || 'fr', theme: theme || 'dark'
+  });
   await flushAll();
-  res.json({ ok: true, wipedAt: new Date().toISOString() });
+
+  res.json({
+    ok: true, wipedAt: new Date().toISOString(),
+    token: signToken(admin), user: publicUser(admin), temporaryPassword: password
+  });
 });
 
 export default router;
