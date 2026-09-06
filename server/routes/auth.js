@@ -12,7 +12,13 @@ router.post('/register', (req, res) => {
   const { name, email, password, role = 'student', lang = 'fr' } = req.body || {};
   if (!name || !EMAIL_RE.test(email || '')) return res.status(400).json({ error: 'invalid_email_or_name' });
   if (!password || password.length < 8) return res.status(400).json({ error: 'weak_password', min: 8 });
-  if (!ROLES.includes(role) || role === 'admin') return res.status(400).json({ error: 'invalid_role' });
+  if (!ROLES.includes(role)) return res.status(400).json({ error: 'invalid_role' });
+  // Registering as admin is only ever allowed to bootstrap the very first
+  // one — once an admin exists, later admins must be promoted from the
+  // admin console instead of self-registered.
+  if (role === 'admin' && db.users.count({ role: 'admin' }) > 0) {
+    return res.status(400).json({ error: 'invalid_role' });
+  }
   if (db.users.findOne({ email: email.toLowerCase() })) return res.status(409).json({ error: 'email_taken' });
 
   const user = db.users.insert({
