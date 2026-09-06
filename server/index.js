@@ -81,13 +81,28 @@ app.get('/api/health', (req, res) => {
 });
 
 // Served explicitly, because UPLOAD_DIR may point outside the deploy root.
+// Filenames here are content-addressed (random + original name), so a long
+// cache lifetime is safe: a changed file is a new URL, never a stale one.
 app.use('/uploads', express.static(UPLOAD_DIR, { maxAge: '7d', index: false }));
-app.use(express.static(PUBLIC, { extensions: ['html'] }));
+
+// This app has no build step and no hashed filenames — /js/app.js always
+// means the current app.js. Without an explicit Cache-Control, a browser is
+// free to keep serving a pre-deploy copy from disk indefinitely, which is
+// exactly what happened after the assignment-grading fix shipped: the app
+// silently ran on stale JS until a manual hard refresh. `no-cache` fixes
+// that for every future deploy: the browser still caches the file, but must
+// revalidate with the server on every load (a cheap 304 when unchanged), so
+// a new deploy is always picked up on the next navigation.
+app.use(express.static(PUBLIC, {
+  extensions: ['html'],
+  setHeaders: res => res.setHeader('Cache-Control', 'no-cache')
+}));
 
 app.use('/api', (_req, res) => res.status(404).json({ error: 'no_such_endpoint' }));
 // Everything else is handled by the client-side router.
 app.use((req, res, next) => {
   if (req.method !== 'GET') return next();
+  res.setHeader('Cache-Control', 'no-cache');
   res.sendFile(path.join(PUBLIC, 'index.html'));
 });
 
