@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import http from 'node:http';
 import path from 'node:path';
+import fs from 'node:fs';
 import express from 'express';
 import cookieParser from 'cookie-parser';
 
@@ -86,24 +87,47 @@ app.get('/api/health', (req, res) => {
 app.use('/uploads', express.static(UPLOAD_DIR, { maxAge: '7d', index: false }));
 
 // This app has no build step and no hashed filenames — /js/app.js always
-// means the current app.js. Without an explicit Cache-Control, a browser is
-// free to keep serving a pre-deploy copy from disk indefinitely, which is
-// exactly what happened after the assignment-grading fix shipped: the app
-// silently ran on stale JS until a manual hard refresh. `no-cache` fixes
-// that for every future deploy: the browser still caches the file, but must
-// revalidate with the server on every load (a cheap 304 when unchanged), so
-// a new deploy is always picked up on the next navigation.
+// means the current app.js. `no-cache` asks any cache to revalidate with the
+// server before reusing a copy (a cheap 304 when unchanged), which is enough
+// for a browser sitting directly in front of the app. It is NOT enough here:
+// this site sits behind Hostinger's own CDN (hcdn), which caches /js and /css
+// by file extension on its own schedule and does not pass Cache-Control
+// through to the client for them (confirmed against production — the header
+// simply never arrives, independent of what the origin sends). Relying on it
+// alone is exactly what let the assignment-grading fix ship, build, and pass
+// every check, while real visitors kept getting served the previous deploy's
+// app.js from the edge for several minutes after.
+//
+// So the entry page is versioned instead: BUILD_ID changes every time this
+// process starts (i.e. every deploy, since the host restarts it), and the
+// script/style tags below carry it as a query string. hcdn's cache key
+// includes the query string, so a new deploy always means a URL the edge has
+// never seen — the old cached copy is simply never requested again. `/` and
+// the SPA fallback are themselves untouched by hcdn's static-asset caching
+// (verified as "DYNAMIC" in its response headers), so the new BUILD_ID is
+// guaranteed to reach every visitor on their very next navigation.
+const BUILD_ID = Date.now().toString(36);
+const indexShell = fs.readFileSync(path.join(PUBLIC, 'index.html'), 'utf8')
+  .replace('/js/app.js', `/js/app.js?v=${BUILD_ID}`)
+  .replace('/css/style.css', `/css/style.css?v=${BUILD_ID}`);
+
+const sendShell = (_req, res) => {
+  res.setHeader('Cache-Control', 'no-cache');
+  res.type('html').send(indexShell);
+};
+
 app.use(express.static(PUBLIC, {
   extensions: ['html'],
+  index: false,   // '/' is handled by sendShell below, not by serving the file as-is
   setHeaders: res => res.setHeader('Cache-Control', 'no-cache')
 }));
 
+app.get('/', sendShell);
 app.use('/api', (_req, res) => res.status(404).json({ error: 'no_such_endpoint' }));
 // Everything else is handled by the client-side router.
 app.use((req, res, next) => {
   if (req.method !== 'GET') return next();
-  res.setHeader('Cache-Control', 'no-cache');
-  res.sendFile(path.join(PUBLIC, 'index.html'));
+  sendShell(req, res);
 });
 
 app.use((err, _req, res, _next) => {
