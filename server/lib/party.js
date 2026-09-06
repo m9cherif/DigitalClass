@@ -12,7 +12,15 @@ const rooms = new Map();          // pin -> room
 const PIN_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
 export const getRoom = pin => rooms.get(String(pin || '').toUpperCase()) || null;
-export const listRooms = () => [...rooms.values()].map(publicRoom);
+
+/** `classId: null` (the default) lists homepage rooms — global quizzes only,
+ *  never ones hosted from inside a class. Pass a class id to see that class's
+ *  rooms instead; the two lists never overlap. */
+export function listRooms({ classId = null } = {}) {
+  return [...rooms.values()]
+    .filter(r => (r.classId || null) === classId)
+    .map(publicRoom);
+}
 
 function newPin() {
   let pin;
@@ -26,15 +34,19 @@ export function publicRoom(room) {
     pin: room.pin, quizId: room.quizId, title: room.title, hostName: room.hostName,
     mode: room.mode, state: room.state, questionIndex: room.index,
     questionCount: room.questions.length, playerCount: room.players.size,
-    teamMode: room.teamMode, createdAt: room.createdAt
+    teamMode: room.teamMode, classId: room.classId, createdAt: room.createdAt
   };
 }
 
 export function createRoom({ quiz, questions, host, options = {} }) {
   const pin = newPin();
+  // A room scoped to a class (hosted from inside a Class Hub) is kept out of
+  // the homepage's global "live now"/history lists and vice versa — the two
+  // hubs never mix rooms, only the underlying game engine is shared.
+  const course = db.courses.byId(quiz.courseId);
   const room = {
     pin, id: id('party_'),
-    quizId: quiz.id, courseId: quiz.courseId, title: quiz.title,
+    quizId: quiz.id, courseId: quiz.courseId, classId: course?.classId || null, title: quiz.title,
     hostId: host.id, hostName: host.name,
     mode: options.mode || 'classic',            // classic | team | survival | marathon
     teamMode: options.mode === 'team',
@@ -126,7 +138,7 @@ export function endRoom(room) {
   const final = standings(room);
 
   db.parties.insert({
-    id: room.id, pin: room.pin, quizId: room.quizId, courseId: room.courseId,
+    id: room.id, pin: room.pin, quizId: room.quizId, courseId: room.courseId, classId: room.classId,
     hostId: room.hostId, mode: room.mode, title: room.title,
     questionCount: room.questions.length,
     players: final.players.map(p => ({

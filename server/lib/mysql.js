@@ -58,7 +58,9 @@ export const tableName = c => c.replace(/[A-Z]/g, ch => '_' + ch.toLowerCase());
  */
 const EXTRA_COLUMNS = {
   users: { email: 'email', role: 'role', status: 'status' },
-  courses: { code: 'code', teacher_id: 'teacherId', status: 'status', topic: 'topic' },
+  classes: { code: 'code', teacher_id: 'teacherId', status: 'status' },
+  class_enrollments: { user_id: 'userId', class_id: 'classId', status: 'status' },
+  courses: { class_id: 'classId', teacher_id: 'teacherId', status: 'status', topic: 'topic' },
   lessons: { course_id: 'courseId' },
   enrollments: { user_id: 'userId', course_id: 'courseId', status: 'status' },
   quizzes: { course_id: 'courseId', kind: 'kind' },

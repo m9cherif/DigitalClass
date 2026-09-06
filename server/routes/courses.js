@@ -2,44 +2,37 @@ import { Router } from 'express';
 import { db, id, now } from '../lib/db.js';
 import { awardXp } from '../lib/gamification.js';
 import {
-  requireAuth, requireRole, canEditCourse, isEnrolled, publicUser, isGuardianOf
+  requireAuth, requireRole, canEditCourse, canEditClass, isEnrolled,
+  accessibleCourseIds, publicUser, isGuardianOf
 } from '../middleware/auth.js';
 
 const router = Router();
 
-/* ---------------------------------------------------------- join codes */
-
-// Ambiguous glyphs (0/O, 1/I) are left out so a code read aloud is unambiguous.
-const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-
-function newCourseCode() {
-  let code;
-  do {
-    code = Array.from({ length: 6 }, () => CODE_CHARS[Math.floor(Math.random() * CODE_CHARS.length)]).join('');
-  } while (db.courses.findOne({ code }));
-  return code;
+/** Every student with access to a course: direct enrolments plus, if the
+ *  course belongs to a class, every active member of that class. */
+export function courseMemberIds(course) {
+  const ids = new Set(db.enrollments.find({ courseId: course.id, status: 'active' }).map(e => e.userId));
+  if (course.classId) {
+    for (const e of db.classEnrollments.find({ classId: course.classId, status: 'active' })) ids.add(e.userId);
+  }
+  return ids;
 }
 
-/** Courses created before join codes existed get one the first time they are read. */
-function ensureCode(course) {
-  if (course.code) return course;
-  return db.courses.update(course.id, { code: newCourseCode() }) || course;
-}
-
-/** Course catalogue with search, topic filter and localisation-aware fields. */
+/** Course catalogue with search, topic filter and localisation-aware fields.
+ *  Joining happens at the class level now (see routes/classes.js); a course
+ *  on its own has no code of its own any more. */
 router.get('/', (req, res) => {
-  const { q = '', topic, level, teacherId, mine } = req.query;
-  const myCourseIds = new Set(req.user
-    ? db.enrollments.find({ userId: req.user.id, status: 'active' }).map(e => e.courseId)
-    : []);
+  const { q = '', topic, level, teacherId, mine, classId } = req.query;
+  const myCourseIds = req.user ? accessibleCourseIds(req.user.id) : new Set();
 
   // Drafts stay out of the public catalogue, but remain visible to their
-  // teacher and to students who already joined them with a code.
+  // teacher and to students who already have access through their class.
   let rows = db.courses.all().filter(c =>
     c.status === 'published' || myCourseIds.has(c.id) || (req.user && canEditCourse(req.user, c)));
   if (topic) rows = rows.filter(c => c.topic === topic);
   if (level) rows = rows.filter(c => c.level === level);
   if (teacherId) rows = rows.filter(c => c.teacherId === teacherId);
+  if (classId) rows = rows.filter(c => c.classId === classId);
   if (mine === '1' && req.user) rows = rows.filter(c => myCourseIds.has(c.id));
   if (q) {
     const needle = String(q).toLowerCase();
@@ -48,12 +41,10 @@ router.get('/', (req, res) => {
   res.json({
     courses: rows.map(c => ({
       ...c,
-      // The join code is a teacher's secret: never expose it in the catalogue.
-      code: canEditCourse(req.user, c) ? ensureCode(c).code : undefined,
       teacher: publicUser(db.users.byId(c.teacherId)),
       lessonCount: db.lessons.count({ courseId: c.id }),
       quizCount: db.quizzes.count({ courseId: c.id }),
-      studentCount: db.enrollments.count({ courseId: c.id, status: 'active' }),
+      studentCount: courseMemberIds(c).size,
       enrolled: req.user ? isEnrolled(req.user.id, c.id) : false
     }))
   });
@@ -81,11 +72,12 @@ router.get('/:id', (req, res) => {
   const enrollment = req.user ? db.enrollments.findOne({ userId: req.user.id, courseId: course.id }) : null;
   const lessons = db.lessons.find({ courseId: course.id }).sort((a, b) => a.order - b.order);
 
+  const cls = course.classId ? db.classes.byId(course.classId) : null;
   res.json({
     course: {
       ...course,
-      code: editable ? ensureCode(course).code : undefined,
-      teacher: publicUser(db.users.byId(course.teacherId))
+      teacher: publicUser(db.users.byId(course.teacherId)),
+      class: cls ? { id: cls.id, title: cls.title } : null
     },
     editable, enrolled,
     progress: enrollment?.progress || {},
@@ -104,12 +96,24 @@ router.get('/:id', (req, res) => {
 router.post('/', requireRole('teacher', 'admin'), (req, res) => {
   const b = req.body || {};
   if (!b.title) return res.status(400).json({ error: 'title_required' });
+
+  // A course may belong to a class; anyone who can edit that class can then
+  // edit this course too, so a co-teacher of the class is not locked out of
+  // course they didn't personally create.
+  let cls = null, coTeacherIds = [];
+  if (b.classId) {
+    cls = db.classes.byId(b.classId);
+    if (!cls || !canEditClass(req.user, cls)) return res.status(403).json({ error: 'forbidden' });
+    coTeacherIds = [...new Set([cls.teacherId, ...(cls.coTeacherIds || [])])].filter(x => x !== req.user.id);
+  }
+
   const course = db.courses.insert({
-    title: b.title, description: b.description || '', code: newCourseCode(),
+    title: b.title, description: b.description || '',
+    classId: cls?.id || null,
     topic: b.topic || 'programming', level: b.level || 'beginner',
     lang: b.lang || 'fr', langs: b.langs || ['fr'],
-    tags: b.tags || [], cover: b.cover || null, color: b.color || '#6366f1',
-    teacherId: req.user.id, coTeacherIds: [], status: b.status || 'draft',
+    tags: b.tags || [], cover: b.cover || null, color: b.color || cls?.color || '#6366f1',
+    teacherId: req.user.id, coTeacherIds, status: b.status || 'draft',
     estimatedHours: Number(b.estimatedHours) || 10
   });
   res.status(201).json({ course });
@@ -120,8 +124,12 @@ router.patch('/:id', requireAuth, (req, res) => {
   if (!course) return res.status(404).json({ error: 'not_found' });
   if (!canEditCourse(req.user, course)) return res.status(403).json({ error: 'forbidden' });
   const allowed = ['title', 'description', 'topic', 'level', 'lang', 'langs', 'tags',
-    'cover', 'color', 'status', 'estimatedHours', 'coTeacherIds'];
+    'cover', 'color', 'status', 'estimatedHours', 'coTeacherIds', 'classId'];
   const patch = Object.fromEntries(Object.entries(req.body || {}).filter(([k]) => allowed.includes(k)));
+  if ('classId' in patch && patch.classId) {
+    const cls = db.classes.byId(patch.classId);
+    if (!cls || !canEditClass(req.user, cls)) return res.status(403).json({ error: 'forbidden' });
+  }
   res.json({ course: db.courses.update(course.id, patch) });
 });
 
@@ -196,42 +204,9 @@ router.post('/:courseId/lessons/:lessonId/complete', requireAuth, (req, res) => 
 
 /* ------------------------------------------------------------ enrollment */
 
-/**
- * Join a course with the 6-character code the teacher shares.
- * Works even for unpublished courses — the code IS the invitation.
- */
-router.post('/join', requireRole('student'), (req, res) => {
-  const code = String(req.body?.code || '').trim().toUpperCase();
-  if (code.length !== 6) return res.status(400).json({ error: 'bad_code_format' });
-
-  const course = db.courses.findOne({ code });
-  if (!course) return res.status(404).json({ error: 'code_not_found' });
-
-  const existing = db.enrollments.findOne({ userId: req.user.id, courseId: course.id });
-  if (existing) {
-    db.enrollments.update(existing.id, { status: 'active' });
-    return res.json({ course: { id: course.id, title: course.title }, alreadyMember: true });
-  }
-
-  db.enrollments.insert({
-    userId: req.user.id, courseId: course.id, status: 'active',
-    progress: {}, completed: false, enrolledAt: now(), joinedByCode: true
-  });
-  db.notifications.insert({
-    userId: course.teacherId, kind: 'new_student', read: false,
-    data: { courseId: course.id, courseTitle: course.title, studentName: req.user.name }
-  });
-  awardXp(req.user.id, 10, 'enroll');
-  res.status(201).json({ course: { id: course.id, title: course.title }, alreadyMember: false });
-});
-
-/** Rotate the code — used when a class ends or a code leaks. */
-router.post('/:id/code/regenerate', requireAuth, (req, res) => {
-  const course = db.courses.byId(req.params.id);
-  if (!course) return res.status(404).json({ error: 'not_found' });
-  if (!canEditCourse(req.user, course)) return res.status(403).json({ error: 'forbidden' });
-  res.json({ code: db.courses.update(course.id, { code: newCourseCode() }).code });
-});
+// Joining by code now happens once, at the class level (routes/classes.js),
+// and grants every course inside it. A published, ungrouped course can still
+// be enrolled in directly by browsing the catalogue:
 
 router.post('/:id/enroll', requireRole('student'), (req, res) => {
   const course = db.courses.byId(req.params.id);
@@ -258,26 +233,29 @@ router.delete('/:id/enroll', requireAuth, (req, res) => {
   res.json({ ok: true });
 });
 
-/** Roster with per-student progress — teachers and admins only. */
+/** Roster with per-student progress — teachers and admins only. Includes
+ *  students who have access only through the course's class, not just those
+ *  with a direct enrolment row. */
 router.get('/:id/roster', requireAuth, (req, res) => {
   const course = db.courses.byId(req.params.id);
   if (!canEditCourse(req.user, course)) return res.status(403).json({ error: 'forbidden' });
   const total = Math.max(1, db.lessons.count({ courseId: course.id }));
-  const roster = db.enrollments.find({ courseId: course.id, status: 'active' }).map(e => {
-    const student = db.users.byId(e.userId);
-    const attempts = db.attempts.find({ userId: e.userId, courseId: course.id, status: 'graded' });
+  const roster = [...courseMemberIds(course)].map(userId => {
+    const student = db.users.byId(userId);
+    const e = db.enrollments.findOne({ userId, courseId: course.id, status: 'active' });
+    const attempts = db.attempts.find({ userId, courseId: course.id, status: 'graded' });
     const avg = attempts.length
       ? +(attempts.reduce((s, a) => s + (a.result?.percent || 0), 0) / attempts.length).toFixed(1) : null;
     return {
       student: publicUser(student),
-      lessonsDone: Object.values(e.progress || {}).filter(p => p.done).length,
+      lessonsDone: Object.values(e?.progress || {}).filter(p => p.done).length,
       lessonsTotal: total,
-      completed: e.completed,
+      completed: e?.completed || false,
       attempts: attempts.length,
       averageScore: avg,
       lastActive: student?.lastActiveDay || null
     };
-  });
+  }).filter(r => r.student);
   res.json({ roster });
 });
 
@@ -292,9 +270,9 @@ router.post('/:id/assignments', requireAuth, (req, res) => {
     dueAt: b.dueAt || null, points: Number(b.points) || 20,
     allowFiles: b.allowFiles !== false, allowCode: !!b.allowCode
   });
-  for (const e of db.enrollments.find({ courseId: course.id, status: 'active' })) {
+  for (const userId of courseMemberIds(course)) {
     db.notifications.insert({
-      userId: e.userId, kind: 'assignment', read: false,
+      userId, kind: 'assignment', read: false,
       data: { courseId: course.id, assignmentId: assignment.id, title: assignment.title, dueAt: assignment.dueAt }
     });
   }
@@ -396,17 +374,17 @@ router.get('/child/:studentId/report', requireRole('parent', 'admin'), (req, res
   }
   const student = db.users.byId(studentId);
   if (!student) return res.status(404).json({ error: 'not_found' });
-  const enrollments = db.enrollments.find({ userId: studentId, status: 'active' });
   const attempts = db.attempts.find({ userId: studentId, status: 'graded' });
   res.json({
     student: publicUser(student),
-    courses: enrollments.map(e => {
-      const course = db.courses.byId(e.courseId);
-      const total = Math.max(1, db.lessons.count({ courseId: e.courseId }));
+    courses: [...accessibleCourseIds(studentId)].map(courseId => {
+      const course = db.courses.byId(courseId);
+      const e = db.enrollments.findOne({ userId: studentId, courseId });
+      const total = Math.max(1, db.lessons.count({ courseId }));
       return {
         course: course && { id: course.id, title: course.title, color: course.color },
-        percent: Math.round((Object.values(e.progress || {}).filter(p => p.done).length / total) * 100),
-        completed: e.completed
+        percent: Math.round((Object.values(e?.progress || {}).filter(p => p.done).length / total) * 100),
+        completed: e?.completed || false
       };
     }),
     stats: {

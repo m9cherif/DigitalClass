@@ -45,32 +45,12 @@ export function authView(mode) {
             <a href="${isLogin ? '/register' : '/login'}">${t(isLogin ? 'auth.register' : 'auth.login')}</a>
           </div>
         </div>
-        ${isLogin ? `
-          <div class="card mt small">
-            <strong>${t('auth.demoAccounts')}</strong>
-            <div class="stack mt">
-              ${[['admin@digitalclass.dev', 'admin'], ['nadia@digitalclass.dev', 'teacher'],
-                 ['yasmine@digitalclass.dev', 'student'], ['parent@digitalclass.dev', 'parent']]
-                .map(([mail, role]) => `
-                  <div class="between">
-                    <span class="mono tiny">${mail}</span>
-                    <button class="btn btn-sm" data-demo="${mail}">${t('auth.role.' + role) || role}</button>
-                  </div>`).join('')}
-            </div>
-            <div class="muted tiny mt">password123</div>
-          </div>` : ''}
       </div>`;
 
     out.querySelectorAll('[data-lang]').forEach(b => b.onclick = async () => {
       await i18n.load(b.dataset.lang);
       router.resolve();
       document.dispatchEvent(new CustomEvent('dc:relang'));
-    });
-
-    out.querySelectorAll('[data-demo]').forEach(b => b.onclick = async () => {
-      out.querySelector('[name=email]').value = b.dataset.demo;
-      out.querySelector('[name=password]').value = 'password123';
-      out.querySelector('#authForm').requestSubmit();
     });
 
     out.querySelector('#authForm').onsubmit = async e => {
@@ -260,27 +240,12 @@ export async function coursesView(_p, out) {
   const { courses } = await api.get('/courses');
   const topics = [...new Set(courses.map(c => c.topic))];
   const canCreate = ['teacher', 'admin'].includes(store.user.role);
-  const isStudent = store.user.role === 'student';
 
   out.innerHTML = `
     <div class="between mb">
       <h1>${t('course.catalogue')}</h1>
       ${canCreate ? `<a class="btn btn-primary" href="/courses/new">+ ${t('course.newCourse')}</a>` : ''}
     </div>
-
-    ${isStudent ? `
-      <form class="card join-card mb" id="joinForm">
-        <div class="join-lead">
-          <strong>🔑 ${t('course.join')}</strong>
-          <div class="small muted">${t('course.joinHint')}</div>
-        </div>
-        <div class="join-controls">
-          <input id="joinCode" class="code-input" maxlength="6" autocomplete="off"
-                 placeholder="${t('course.joinPlaceholder')}" aria-label="${t('course.code')}">
-          <button class="btn btn-primary">${t('course.join')}</button>
-        </div>
-        <div id="joinErr" class="small" style="color:var(--danger)"></div>
-      </form>` : ''}
 
     <div class="row mb filters">
       <input id="q" placeholder="${t('common.search')}" class="search-input">
@@ -290,27 +255,6 @@ export async function coursesView(_p, out) {
       </div>
     </div>
     <div id="list" class="grid grid-2"></div>`;
-
-  const joinForm = out.querySelector('#joinForm');
-  if (joinForm) {
-    const input = out.querySelector('#joinCode');
-    input.oninput = () => { input.value = input.value.toUpperCase().replace(/[^A-Z0-9]/g, ''); };
-    joinForm.onsubmit = async e => {
-      e.preventDefault();
-      const err = out.querySelector('#joinErr');
-      err.textContent = '';
-      try {
-        const r = await api.post('/courses/join', { code: input.value });
-        toast(r.alreadyMember
-          ? t('course.alreadyMember')
-          : '✅ ' + t('course.joined', { course: esc(r.course.title) }), 'success');
-        router.go('/courses/' + r.course.id);
-      } catch (ex) {
-        const code = ex.body?.error;
-        err.textContent = t('course.' + code) !== 'course.' + code ? t('course.' + code) : t('common.error');
-      }
-    };
-  }
 
   const list = out.querySelector('#list');
   let filter = { q: '', topic: '' };
@@ -387,7 +331,8 @@ export async function courseView({ id }, out) {
   const pct = Math.round((c.lessons.filter(l => done(l.id)).length / total) * 100);
 
   out.innerHTML = `
-    <div class="card mb" style="border-top:4px solid ${esc(course.color)}">
+    ${course.class ? `<a href="/classes/${course.class.id}" class="small">← ${esc(course.class.title)}</a>` : ''}
+    <div class="card ${course.class ? 'mt' : ''} mb" style="border-top:4px solid ${esc(course.color)}">
       <div class="between">
         <div>
           <div class="row mb">
@@ -413,19 +358,6 @@ export async function courseView({ id }, out) {
       </div>
     </div>
 
-    ${course.code ? `
-      <div class="card code-card mb">
-        <div>
-          <div class="small muted">${t('course.code')}</div>
-          <div class="code-value" id="codeValue">${esc(course.code)}</div>
-          <div class="tiny muted">${t('course.codeHint')}</div>
-        </div>
-        <div class="row">
-          <button class="btn btn-sm" id="copyCode">📋</button>
-          <button class="btn btn-sm" id="newCode">${t('course.regenerate')}</button>
-        </div>
-      </div>` : ''}
-
     <div class="tabs">
       <button class="tab active" data-tab="lessons">${t('course.lessons')} (${c.lessons.length})</button>
       <button class="tab" data-tab="quizzes">${t('course.quizzes')} (${c.quizzes.length})</button>
@@ -434,26 +366,6 @@ export async function courseView({ id }, out) {
       <button class="tab" data-tab="chat">${t('course.chat')}</button>
     </div>
     <div id="tab"></div>`;
-
-  out.querySelector('#copyCode')?.addEventListener('click', async () => {
-    try {
-      await navigator.clipboard.writeText(course.code);
-      toast('✅ ' + t('course.codeCopied'), 'success');
-    } catch {
-      // Clipboard is blocked on insecure origins — select the text instead.
-      const range = document.createRange();
-      range.selectNodeContents(out.querySelector('#codeValue'));
-      getSelection().removeAllRanges();
-      getSelection().addRange(range);
-    }
-  });
-
-  out.querySelector('#newCode')?.addEventListener('click', async () => {
-    const r = await api.post(`/courses/${id}/code/regenerate`);
-    out.querySelector('#codeValue').textContent = r.code;
-    course.code = r.code;
-    toast('🔑 ' + r.code, 'success');
-  });
 
   const panes = {
     lessons: () => `

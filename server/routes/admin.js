@@ -161,10 +161,15 @@ router.get('/analytics/quiz/:quizId', requireAuth, (req, res) => {
 
 /* ------------------------------------------------------------- live rooms */
 
-router.get('/parties/live', requireAuth, (_req, res) => res.json({ rooms: listRooms() }));
+// classId absent/empty -> the homepage hub's global rooms; a class id -> that
+// class's own hub. The two never share a room or a history list.
+router.get('/parties/live', requireAuth, (req, res) =>
+  res.json({ rooms: listRooms({ classId: req.query.classId || null }) }));
 
 router.get('/parties/history', requireAuth, (req, res) => {
+  const classId = req.query.classId || null;
   const rows = db.parties.all()
+    .filter(p => (p.classId || null) === classId)
     .filter(p => req.user.role === 'admin' || p.hostId === req.user.id ||
       p.players.some(pl => pl.userId === req.user.id))
     .sort((a, b) => (b.endedAt || '').localeCompare(a.endedAt || '')).slice(0, 50);
@@ -252,6 +257,14 @@ router.get('/stats', requireRole('admin'), (_req, res) => {
 router.post('/backup', requireRole('admin'), (_req, res) => {
   flushAll();
   res.json({ ok: true, collections: COLLECTIONS, at: new Date().toISOString() });
+});
+
+/** Irreversible: erases every row in every collection. Used to reset the
+ *  platform between school years or to clear out test data before launch. */
+router.post('/wipe-all', requireRole('admin'), async (_req, res) => {
+  for (const name of COLLECTIONS) db[name].clear();
+  await flushAll();
+  res.json({ ok: true, wipedAt: new Date().toISOString() });
 });
 
 export default router;

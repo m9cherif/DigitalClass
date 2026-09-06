@@ -1,37 +1,44 @@
 /* DigitalClass — design tokens, layout and components. Logical properties
    throughout so the whole UI mirrors correctly when dir="rtl" (Arabic). */
 
+/* "Nocturne" — flat dark theme: surfaces sit at the same level as the page,
+   cards are the only thing that steps up a shade, hairlines are the text
+   colour at low alpha rather than a separate border hue, and the accent is a
+   soft periwinkle used both filled (chips) and as an outline (buttons). */
 :root {
-  --bg: #0b0f1a;
-  --surface: #121826;
-  --surface-2: #1a2234;
-  --surface-3: #232d42;
-  --border: #2a3550;
-  --text: #e8edf7;
-  --muted: #96a3bd;
-  --primary: #6366f1;
-  --primary-soft: rgba(99, 102, 241, .16);
+  --bg: #161826;
+  --surface: #161826;
+  --surface-2: #1e2030;
+  --surface-3: #232532;
+  --border: rgba(233, 233, 237, .14);
+  --text: #e9e9ed;
+  --muted: rgba(233, 233, 237, .58);
+  --primary: #9184d9;
+  --primary-soft: rgba(145, 132, 217, .16);
+  --primary-strong: #423a6a;
   --accent: #22d3ee;
   --success: #34d399;
   --warning: #fbbf24;
   --danger: #f87171;
-  --radius: 14px;
-  --radius-sm: 9px;
-  --shadow: 0 10px 32px rgba(0, 0, 0, .35);
+  --radius: 10px;
+  --radius-sm: 8px;
+  --shadow: 0 10px 28px rgba(0, 0, 0, .3);
   --font: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
   --mono: "JetBrains Mono", "Cascadia Code", "SF Mono", Consolas, monospace;
 }
 
 html[data-theme="light"] {
   --bg: #f4f6fb;
-  --surface: #ffffff;
-  --surface-2: #f7f9fd;
-  --surface-3: #eef2f9;
-  --border: #dde4f0;
-  --text: #16203a;
-  --muted: #5d6b88;
-  --primary-soft: rgba(99, 102, 241, .1);
-  --shadow: 0 8px 26px rgba(20, 30, 60, .1);
+  --surface: #f4f6fb;
+  --surface-2: #eceef7;
+  --surface-3: #ffffff;
+  --border: rgba(22, 24, 46, .12);
+  --text: #17182b;
+  --muted: rgba(23, 24, 43, .58);
+  --primary: #6a5acd;
+  --primary-soft: rgba(106, 90, 205, .12);
+  --primary-strong: #ded8f7;
+  --shadow: 0 8px 24px rgba(20, 20, 40, .08);
 }
 
 html[lang="ar"] { --font: "Cairo", "Segoe UI", "Tahoma", system-ui, sans-serif; }
@@ -78,7 +85,19 @@ code, pre, .mono { font-family: var(--mono); }
 }
 .side-link:hover { background: var(--surface-2); color: var(--text); text-decoration: none; }
 .side-link.active { background: var(--primary-soft); color: var(--primary); }
-.side-link .ic { font-size: 1.05rem; inline-size: 20px; text-align: center; }
+.ic {
+  display: inline-flex; align-items: center; justify-content: center; flex: none;
+  inline-size: 18px; block-size: 18px; vertical-align: -4px; color: var(--primary);
+}
+.ic svg { inline-size: 100%; block-size: 100%; }
+.side-link .ic {
+  font-size: 1.05rem; inline-size: 20px; block-size: 20px; text-align: center;
+  color: var(--primary); display: inline-flex; align-items: center; justify-content: center; flex: none;
+}
+.side-link .ic svg { inline-size: 18px; block-size: 18px; }
+.ic-inline {
+  inline-size: 15px; block-size: 15px; vertical-align: -3px; color: var(--primary); flex: none;
+}
 /* min-inline-size:0 stops this grid item from being sized by its widest
    child (grid items default to min-width:auto, which forces page scroll). */
 main { padding: 1.5rem 1.7rem 4rem; max-inline-size: 1180px; min-inline-size: 0; }
@@ -124,7 +143,7 @@ main { padding: 1.5rem 1.7rem 4rem; max-inline-size: 1180px; min-inline-size: 0;
 /* --------------------------------------------------------------- widgets */
 
 .card {
-  background: var(--surface); border: 1px solid var(--border);
+  background: var(--surface-3); border: 1px solid var(--border);
   border-radius: var(--radius); padding: 1.1rem;
 }
 .card + .card { margin-block-start: 1rem; }
@@ -148,15 +167,20 @@ main { padding: 1.5rem 1.7rem 4rem; max-inline-size: 1180px; min-inline-size: 0;
 .btn {
   display: inline-flex; align-items: center; justify-content: center; gap: .45rem;
   padding: .55rem 1rem; border-radius: var(--radius-sm); border: 1px solid var(--border);
-  background: var(--surface-2); color: var(--text); font: inherit; font-weight: 600; font-size: .9rem;
-  cursor: pointer; transition: filter .15s ease, background .15s ease;
+  background: transparent; color: var(--text); font: inherit; font-weight: 600; font-size: .9rem;
+  cursor: pointer; transition: background .15s ease, border-color .15s ease;
 }
-.btn:hover:not(:disabled) { filter: brightness(1.15); text-decoration: none; }
+.btn:hover:not(:disabled) { background: var(--surface-2); text-decoration: none; }
 .btn:disabled { opacity: .5; cursor: not-allowed; }
-.btn-primary { background: var(--primary); border-color: var(--primary); color: #fff; }
+/* The accent is an outline, not a fill — this theme keeps every surface flat
+   and lets the periwinkle border/text carry the emphasis instead. */
+.btn-primary { background: transparent; border-color: var(--primary); color: var(--primary); }
+.btn-primary:hover:not(:disabled) { background: var(--primary-soft); }
 .btn-success { background: var(--success); border-color: var(--success); color: #05261a; }
+.btn-success:hover:not(:disabled) { filter: brightness(1.08); background: var(--success); }
 .btn-danger { background: transparent; border-color: var(--danger); color: var(--danger); }
-.btn-ghost { background: transparent; }
+.btn-danger:hover:not(:disabled) { background: rgba(248, 113, 113, .12); }
+.btn-ghost { background: transparent; border-color: transparent; }
 .btn-sm { padding: .32rem .62rem; font-size: .8rem; }
 .btn-lg { padding: .8rem 1.5rem; font-size: 1rem; }
 .btn-block { inline-size: 100%; }
@@ -181,10 +205,17 @@ label { display: block; font-size: .82rem; font-weight: 600; color: var(--muted)
 .badge-warning { background: rgba(251, 191, 36, .16); color: var(--warning); }
 .badge-danger  { background: rgba(248, 113, 113, .16); color: var(--danger); }
 
+/* Minimal taxonomy label — no fill, small tracked caps, used on course/class
+   cards where a solid pill would compete with the stat badges next to it. */
+.tag-label {
+  font-size: .68rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase;
+  color: var(--primary);
+}
+
 .progress { block-size: 7px; background: var(--surface-3); border-radius: 999px; overflow: hidden; }
 .progress > i { display: block; block-size: 100%; background: linear-gradient(90deg, var(--primary), var(--accent)); border-radius: 999px; transition: inline-size .4s ease; }
 
-.stat { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: .9rem 1rem; }
+.stat { background: var(--surface-3); border: 1px solid var(--border); border-radius: var(--radius); padding: .9rem 1rem; }
 .stat .v { font-size: 1.55rem; font-weight: 750; line-height: 1.15; }
 .stat .k { font-size: .78rem; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
 
@@ -212,7 +243,7 @@ pre {
 
 /* --------------------------------------------------------------- quizzes */
 
-.q-card { border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); padding: 1.2rem; }
+.q-card { border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-3); padding: 1.2rem; }
 .q-prompt { font-size: 1.08rem; font-weight: 620; margin-block-end: .9rem; }
 .opt {
   display: flex; align-items: center; gap: .7rem; padding: .7rem .85rem; margin-block-end: .5rem;
@@ -280,12 +311,12 @@ pre {
 /* --------------------------------------------------------------- parties */
 
 .party-hero {
-  background: linear-gradient(135deg, var(--primary), var(--accent));
-  border-radius: var(--radius); padding: 2rem; color: #fff; text-align: center;
+  background: var(--surface-3); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 2rem; color: var(--text); text-align: center;
 }
 .pin-display {
   font-family: var(--mono); font-size: 2.6rem; font-weight: 800; letter-spacing: .35em;
-  padding: .6rem 1rem; background: rgba(255, 255, 255, .16); border-radius: var(--radius);
+  padding: .6rem 1rem; background: var(--surface-2); color: var(--primary); border-radius: var(--radius);
   display: inline-block; direction: ltr;
 }
 .pin-input { font-family: var(--mono); font-size: 1.7rem; text-align: center; letter-spacing: .3em; text-transform: uppercase; direction: ltr; }

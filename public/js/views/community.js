@@ -341,6 +341,7 @@ export async function adminView(_p, out) {
       <button class="tab active" data-atab="overview">📊 ${t('admin.overview')}</button>
       <button class="tab" data-atab="people">👥 ${t('admin.people')}</button>
       <button class="tab" data-atab="content">📚 ${t('admin.content')}</button>
+      <button class="tab" data-atab="danger">⚠️ ${t('admin.dangerZone')}</button>
     </div>
     <div id="apane"></div>`;
 
@@ -413,11 +414,19 @@ export async function adminView(_p, out) {
                 </span>
               </span>
               <span class="row">
-                ${c.code ? `<span class="badge mono">${esc(c.code)}</span>` : ''}
                 <span class="badge badge-${c.status === 'published' ? 'success' : 'warning'}">${esc(c.status)}</span>
               </span>
             </a>`).join('') || `<div class="muted small">${t('common.empty')}</div>`}
         </div>
+      </div>`,
+
+    danger: () => `
+      <div class="card" style="border:1px solid var(--danger)">
+        <h3>${t('admin.wipeAll')}</h3>
+        <p class="small muted">${t('admin.wipeAllHint')}</p>
+        <div class="field"><label>${t('admin.wipeConfirmLabel')}</label>
+          <input id="wipeConfirm" autocomplete="off" placeholder="DELETE"></div>
+        <button class="btn btn-danger" id="wipeBtn" disabled>${t('admin.wipeAll')}</button>
       </div>`
   };
 
@@ -463,6 +472,17 @@ export async function adminView(_p, out) {
     if (name === 'people') {
       out.querySelector('#q').oninput = e => drawUsers(e.target.value.toLowerCase());
       drawUsers();
+    }
+    if (name === 'danger') {
+      const input = out.querySelector('#wipeConfirm');
+      const btn = out.querySelector('#wipeBtn');
+      input.oninput = () => { btn.disabled = input.value !== 'DELETE'; };
+      btn.onclick = async () => {
+        if (!confirm(t('admin.wipeAllHint'))) return;
+        await api.post('/wipe-all', {});
+        toast('✅ ' + t('admin.wipeAllDone'), 'success');
+        session.logout();
+      };
     }
   };
 

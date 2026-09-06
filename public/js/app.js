@@ -1,11 +1,12 @@
 /* Application shell: boot, chrome (topbar + sidebar), route table. */
 import {
-  api, store, session, router, i18n, t, esc, avatar, toast,
+  api, store, session, router, i18n, t, esc, avatar, toast, icon,
   connectSocket, applyTheme, LANGS
 } from './core.js';
 import * as Learn from './views/learn.js';
 import * as Quiz from './views/quiz.js';
 import * as Party from './views/party.js';
+import * as Classes from './views/classes.js';
 import * as Community from './views/community.js';
 
 /* ----------------------------------------------------------------- chrome */
@@ -23,28 +24,28 @@ function chrome() {
   // admins administer, parents observe, students learn, teachers teach.
   const plays = u.role === 'student' || u.role === 'teacher';
   const nav = [
-    { href: '/', icon: u.role === 'admin' ? '⚙️' : '🏠',
+    { href: '/', icon: u.role === 'admin' ? 'gear' : 'home',
       label: u.role === 'admin' ? t('nav.admin') : t('nav.dashboard'), primary: true },
-    { href: '/courses', icon: '📚', label: t('nav.courses'), primary: true },
-    ...(plays ? [{ href: '/party', icon: '🎉', label: t('nav.party'), primary: true }] : []),
-    { href: '/forum', icon: '💬', label: t('nav.forum'), primary: !plays },
-    { href: '/messages', icon: '✉️', label: t('nav.messages'), primary: true },
-    ...(u.role === 'student' ? [{ href: '/flashcards', icon: '🃏', label: t('nav.flashcards') }] : []),
-    ...(u.role === 'teacher' ? [{ href: '/review', icon: '📝', label: t('review.queue') }] : []),
+    { href: '/classes', icon: 'classes', label: t('nav.courses'), primary: true },
+    ...(plays ? [{ href: '/party', icon: 'party', label: t('nav.party'), primary: true }] : []),
+    { href: '/forum', icon: 'forum', label: t('nav.forum'), primary: !plays },
+    { href: '/messages', icon: 'mail', label: t('nav.messages'), primary: true },
+    ...(u.role === 'student' ? [{ href: '/flashcards', icon: 'cards', label: t('nav.flashcards') }] : []),
+    ...(u.role === 'teacher' ? [{ href: '/review', icon: 'review', label: t('review.queue') }] : []),
     ...(plays ? [
-      { href: '/leaderboard', icon: '🏆', label: t('nav.leaderboard') },
-      { href: '/playground', icon: '⌨️', label: t('nav.playground') }
+      { href: '/leaderboard', icon: 'trophy', label: t('nav.leaderboard') },
+      { href: '/playground', icon: 'terminal', label: t('nav.playground') }
     ] : [])
   ];
 
   shell.innerHTML = `
     <header class="topbar">
-      <button class="btn btn-sm" id="burger" style="display:none">☰</button>
+      <button class="btn btn-sm" id="burger" style="display:none">${icon('menu')}</button>
       <a class="brand" href="/"><span class="brand-mark">DC</span> ${t('app.name')}</a>
       <span class="topbar-spacer"></span>
 
       <div class="dropdown" id="langDrop">
-        <button class="btn btn-sm">🌐 <span class="lang-label">${LANGS[i18n.lang]}</span></button>
+        <button class="btn btn-sm">${icon('globe')} <span class="lang-label">${LANGS[i18n.lang]}</span></button>
         <div class="dropdown-menu hidden">
           ${Object.entries(LANGS).map(([code, label]) =>
             `<div class="dropdown-item" data-lang="${code}">${label}${i18n.lang === code ? ' ✓' : ''}</div>`).join('')}
@@ -52,10 +53,10 @@ function chrome() {
       </div>
 
       <button class="btn btn-sm" id="themeBtn" title="${t('profile.theme')}">
-        ${document.documentElement.dataset.theme === 'light' ? '🌙' : '☀️'}</button>
+        ${icon(document.documentElement.dataset.theme === 'light' ? 'moon' : 'sun')}</button>
 
       <div class="dropdown" id="notifDrop" style="position:relative">
-        <button class="btn btn-sm" style="position:relative">🔔
+        <button class="btn btn-sm" style="position:relative">${icon('bell')}
           ${store.unread ? `<span class="dot-badge">${store.unread}</span>` : ''}</button>
         <div class="dropdown-menu hidden" id="notifList"></div>
       </div>
@@ -67,9 +68,9 @@ function chrome() {
             <strong>${esc(u.name)}</strong>
             <div class="tiny muted">${t('lb.level')} ${store.progress?.level} · ${i18n.num(u.xp)} XP · 🔥 ${u.streak || 0}</div>
           </div>
-          <a class="dropdown-item" href="/profile">👤 ${t('nav.profile')}</a>
-          ${u.role === 'parent' ? `<a class="dropdown-item" href="/">👨‍👩‍👧 ${t('nav.children')}</a>` : ''}
-          <div class="dropdown-item" id="logout">🚪 ${t('nav.logout')}</div>
+          <a class="dropdown-item" href="/profile">${icon('user')} ${t('nav.profile')}</a>
+          ${u.role === 'parent' ? `<a class="dropdown-item" href="/">${icon('users')} ${t('nav.children')}</a>` : ''}
+          <div class="dropdown-item" id="logout">${icon('logout')} ${t('nav.logout')}</div>
         </div>
       </div>
     </header>
@@ -77,7 +78,7 @@ function chrome() {
     <div class="layout">
       <aside class="sidebar">
         ${nav.map(n =>
-          `<a class="side-link" href="${n.href}"><span class="ic">${n.icon}</span> ${esc(n.label)}</a>`).join('')}
+          `<a class="side-link" href="${n.href}">${icon(n.icon)} ${esc(n.label)}</a>`).join('')}
       </aside>
       <main id="outlet"></main>
     </div>
@@ -85,7 +86,7 @@ function chrome() {
     <nav class="tabbar">
       ${nav.filter(n => n.primary).slice(0, 5).map(n => `
         <a class="tabbar-link" href="${n.href}">
-          <span class="ic">${n.icon}</span><span class="lbl">${esc(n.label)}</span>
+          ${icon(n.icon)}<span class="lbl">${esc(n.label)}</span>
         </a>`).join('')}
     </nav>`;
 
@@ -185,6 +186,9 @@ router.add('/register', Learn.authView('register'), { auth: false });
 // Admins land on the admin console, never on a learner dashboard.
 router.add('/', (p, out) =>
   store.user?.role === 'admin' ? Community.adminView(p, out) : Learn.dashboardView(p, out));
+router.add('/classes', Classes.classHubView);
+router.add('/classes/new', Classes.classNewView, { roles: ['teacher', 'admin'] });
+router.add('/classes/:id', Classes.classDetailView);
 router.add('/courses', Learn.coursesView);
 router.add('/courses/new', Learn.courseNewView, { roles: ['teacher', 'admin'] });
 router.add('/courses/:id', Learn.courseView);

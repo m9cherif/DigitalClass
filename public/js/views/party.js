@@ -2,17 +2,29 @@
 import { api, store, router, t, i18n, esc, toast, connectSocket, avatar } from '../core.js';
 import * as Q from '../questions.js';
 
-export async function partyView(_p, out) {
-  const [{ rooms }, { quizzes }, { parties }] = await Promise.all([
-    api.get('/parties/live'),
-    api.get('/quizzes').catch(() => ({ quizzes: [] })),
-    api.get('/parties/history').catch(() => ({ parties: [] }))
+/**
+ * The party hub. With no classId this is the homepage hub: any published quiz,
+ * a global "live now"/history list. With a classId (mounted from inside a
+ * Class Hub) it is a second, independent hub — its quiz picker only offers
+ * quizzes that belong to that class, and its live/history lists only ever
+ * show rooms hosted from inside it. The two never share a room.
+ */
+export async function partyView({ classId } = {}, out) {
+  const query = classId ? `?classId=${classId}` : '';
+  const [{ rooms }, { quizzes }, { parties }, cls] = await Promise.all([
+    api.get('/parties/live' + query),
+    api.get('/quizzes' + query).catch(() => ({ quizzes: [] })),
+    api.get('/parties/history' + query).catch(() => ({ parties: [] })),
+    classId ? api.get(`/classes/${classId}`).catch(() => null) : Promise.resolve(null)
   ]);
+  // Only a teacher/admin ever sees a way to start a party — a student never
+  // sees the host card at all, here or on the homepage hub.
   const canHost = ['teacher', 'admin'].includes(store.user.role);
 
   out.innerHTML = `
-    <div class="party-hero mb">
-      <h1 style="color:#fff">🎉 ${t('party.title')}</h1>
+    ${classId ? `<a href="/classes/${classId}" class="small">← ${esc(cls?.class?.title || '')}</a>` : ''}
+    <div class="party-hero mb ${classId ? 'mt' : ''}">
+      <h1 style="color:#fff">🎉 ${classId ? esc(cls?.class?.title || '') + ' — ' : ''}${t('party.title')}</h1>
       <p style="opacity:.9">${t('party.subtitle')}</p>
     </div>
 
@@ -26,17 +38,19 @@ export async function partyView(_p, out) {
       <div class="card">
         <h3>${t('party.host')}</h3>
         ${canHost ? `
-          <div class="field"><label>${t('nav.quizzes')}</label>
-            <select id="quiz">${quizzes.filter(q => q.questionCount > 0).map(q =>
-              `<option value="${q.id}">${esc(q.title)} (${q.questionCount})</option>`).join('')}</select></div>
-          <div class="row">
-            <div class="field" style="flex:1"><label>${t('party.mode')}</label>
-              <select id="mode">${['classic', 'team', 'survival', 'marathon'].map(m =>
-                `<option value="${m}">${t('party.mode.' + m)}</option>`).join('')}</select></div>
-            <div class="field" style="flex:1"><label>${t('party.secondsPerQuestion')}</label>
-              <input id="secs" type="number" value="30" min="5" max="180"></div>
-          </div>
-          <button class="btn btn-primary btn-block" id="host">${t('party.host')}</button>`
+          ${quizzes.filter(q => q.questionCount > 0).length ? `
+            <div class="field"><label>${t('nav.quizzes')}</label>
+              <select id="quiz">${quizzes.filter(q => q.questionCount > 0).map(q =>
+                `<option value="${q.id}">${esc(q.title)} (${q.questionCount})</option>`).join('')}</select></div>
+            <div class="row">
+              <div class="field" style="flex:1"><label>${t('party.mode')}</label>
+                <select id="mode">${['classic', 'team', 'survival', 'marathon'].map(m =>
+                  `<option value="${m}">${t('party.mode.' + m)}</option>`).join('')}</select></div>
+              <div class="field" style="flex:1"><label>${t('party.secondsPerQuestion')}</label>
+                <input id="secs" type="number" value="30" min="5" max="180"></div>
+            </div>
+            <button class="btn btn-primary btn-block" id="host">${t('party.host')}</button>`
+            : `<div class="muted small">${t(classId ? 'party.noClassQuizzes' : 'party.noQuizzes')}</div>`}`
           : `<div class="muted small">${t('party.waiting')}</div>`}
       </div>
     </div>
@@ -73,6 +87,9 @@ export async function partyView(_p, out) {
     });
   });
 }
+
+/** Thin wrapper so the router can mount the same hub scoped to a class. */
+export const classPartyView = ({ classId }, out) => partyView({ classId }, out);
 
 export async function partyRoomView({ pin }, out) {
   const sock = connectSocket();

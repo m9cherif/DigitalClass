@@ -65,8 +65,43 @@ export function canEditCourse(user, course) {
     (course.teacherId === user.id || (course.coTeacherIds || []).includes(user.id));
 }
 
+/**
+ * A student has access to a course either through a direct per-course
+ * enrolment (the original model, still used for courses that stand alone) or
+ * by being a member of the class the course belongs to — joining a class
+ * grants every course inside it, including ones added to the class later.
+ */
 export function isEnrolled(userId, courseId) {
-  return !!db.enrollments.findOne({ userId, courseId, status: 'active' });
+  if (!userId) return false;
+  if (db.enrollments.findOne({ userId, courseId, status: 'active' })) return true;
+  const course = db.courses.byId(courseId);
+  if (!course?.classId) return false;
+  return !!db.classEnrollments.findOne({ userId, classId: course.classId, status: 'active' });
+}
+
+/** Teachers may only touch their own class; admins may touch any. */
+export function canEditClass(user, cls) {
+  if (!user || !cls) return false;
+  if (user.role === 'admin') return true;
+  return user.role === 'teacher' &&
+    (cls.teacherId === user.id || (cls.coTeacherIds || []).includes(user.id));
+}
+
+export function isClassMember(userId, classId) {
+  if (!userId) return false;
+  return !!db.classEnrollments.findOne({ userId, classId, status: 'active' });
+}
+
+/** Every course id a user can open: direct enrolments plus every course
+ *  inside a class they are a member of. */
+export function accessibleCourseIds(userId) {
+  if (!userId) return new Set();
+  const ids = new Set(db.enrollments.find({ userId, status: 'active' }).map(e => e.courseId));
+  const classIds = new Set(db.classEnrollments.find({ userId, status: 'active' }).map(e => e.classId));
+  if (classIds.size) {
+    for (const c of db.courses.all()) if (classIds.has(c.classId)) ids.add(c.id);
+  }
+  return ids;
 }
 
 /** A parent may read anything about a child linked to their account. */

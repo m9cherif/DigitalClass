@@ -24,7 +24,8 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const DATA_DIR = path.join(ROOT, 'data');
 
 export const COLLECTIONS = [
-  'users', 'courses', 'lessons', 'enrollments', 'quizzes', 'questions',
+  'users', 'classes', 'classEnrollments', 'courses', 'lessons', 'enrollments',
+  'quizzes', 'questions',
   'attempts', 'assignments', 'submissions', 'badges', 'awards', 'parties',
   'threads', 'posts', 'messages', 'notifications', 'announcements',
   'certificates', 'events', 'links', 'resources', 'flashcardStates'

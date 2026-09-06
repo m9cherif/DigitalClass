@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { db, now } from '../lib/db.js';
 import { gradeAttempt, nextReview } from '../quiz/grader.js';
 import { normaliseMedia } from '../quiz/types.js';
+import { courseMemberIds } from './courses.js';
 import { awardXp, xpForAttempt } from '../lib/gamification.js';
 import { sanitize } from './quizzes.js';
 import { requireAuth, requireRole, canEditCourse, isEnrolled, publicUser } from '../middleware/auth.js';
@@ -212,8 +213,7 @@ router.get('/gradebook/:courseId', requireAuth, (req, res) => {
   const course = db.courses.byId(req.params.courseId);
   if (!canEditCourse(req.user, course)) return res.status(403).json({ error: 'forbidden' });
   const quizzes = db.quizzes.find({ courseId: course.id });
-  const students = db.enrollments.find({ courseId: course.id, status: 'active' })
-    .map(e => db.users.byId(e.userId)).filter(Boolean);
+  const students = [...courseMemberIds(course)].map(id => db.users.byId(id)).filter(Boolean);
 
   const rows = students.map(s => {
     const cells = quizzes.map(q => {

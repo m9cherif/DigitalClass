@@ -11,6 +11,7 @@ import { attachUser } from './middleware/auth.js';
 import { attachRealtime } from './realtime.js';
 import authRoutes from './routes/auth.js';
 import courseRoutes from './routes/courses.js';
+import classRoutes from './routes/classes.js';
 import quizRoutes from './routes/quizzes.js';
 import attemptRoutes from './routes/attempts.js';
 import socialRoutes from './routes/social.js';
@@ -64,6 +65,7 @@ app.use(attachUser);
 
 app.use('/api/auth', authRoutes);
 app.use('/api/courses', courseRoutes);
+app.use('/api/classes', classRoutes);
 app.use('/api/quizzes', quizRoutes);
 app.use('/api/attempts', attemptRoutes);
 app.use('/api/social', socialRoutes);

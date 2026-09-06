@@ -53,9 +53,13 @@ router.get('/types', (_req, res) => {
 
 /** Quiz list — teachers see their drafts, students only published ones. */
 router.get('/', requireAuth, (req, res) => {
-  const { courseId, kind } = req.query;
+  const { courseId, kind, classId } = req.query;
   let rows = db.quizzes.all();
   if (courseId) rows = rows.filter(q => q.courseId === courseId);
+  if (classId) {
+    const courseIds = new Set(db.courses.find({ classId }).map(c => c.id));
+    rows = rows.filter(q => courseIds.has(q.courseId));
+  }
   if (kind) rows = rows.filter(q => q.kind === kind);
   rows = rows.filter(q => {
     const course = db.courses.byId(q.courseId);

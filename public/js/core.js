@@ -255,6 +255,36 @@ export function avatar(user, cls = '') {
     : `<div class="avatar ${cls}">${esc(initials(user.name))}</div>`;
 }
 
+/**
+ * Small stroke-style icon set — 24x24, currentColor, 1.6 stroke — replacing
+ * emoji in the nav and topbar so they take the accent tint like everything
+ * else in the theme instead of rendering as a stray coloured glyph.
+ */
+const ICON_PATHS = {
+  home: '<path d="M3 11.5 12 4l9 7.5"/><path d="M5.5 10v9a1 1 0 0 0 1 1H9a1 1 0 0 0 1-1v-4a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v4a1 1 0 0 0 1 1h2.5a1 1 0 0 0 1-1v-9"/>',
+  book: '<path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15.5H6.5A2.5 2.5 0 0 0 4 21V5.5Z"/><path d="M4 18.5A2.5 2.5 0 0 1 6.5 16H20"/>',
+  classes: '<rect x="3.5" y="4" width="17" height="12" rx="2"/><path d="M8 20h8M12 16v4"/>',
+  party: '<path d="M4 20 15 9"/><path d="m14 4 1 3 3 1-3 1-1 3-1-3-3-1 3-1Z"/><path d="M18 12.5c.6.6.6 1.5 0 2s-1.5.6-2 0"/><circle cx="6" cy="18" r="1.4"/>',
+  forum: '<path d="M4 5.5A2.5 2.5 0 0 1 6.5 3h11A2.5 2.5 0 0 1 20 5.5v7A2.5 2.5 0 0 1 17.5 15H10l-4.5 4v-4h-1A2.5 2.5 0 0 1 2 12.5v0"/>',
+  mail: '<rect x="3" y="5.5" width="18" height="13" rx="2"/><path d="m4 7 8 6 8-6"/>',
+  cards: '<rect x="4" y="7" width="13" height="13" rx="2"/><path d="M8 7V5.5A1.5 1.5 0 0 1 9.5 4H18a1.5 1.5 0 0 1 1.5 1.5V15a1.5 1.5 0 0 1-1.5 1.5H17"/>',
+  review: '<path d="M8 3.5h8v3H8z"/><path d="M6 6h12a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1Z"/><path d="m9 13 2 2 4-4.5"/>',
+  trophy: '<path d="M7 4h10v5a5 5 0 0 1-10 0V4Z"/><path d="M7 5.5H4.5A1.5 1.5 0 0 0 3 7c0 2 1.3 3.3 3.2 3.5M17 5.5h2.5A1.5 1.5 0 0 1 21 7c0 2-1.3 3.3-3.2 3.5"/><path d="M12 14v3M9 20.5h6M9.5 20.5 10 17h4l.5 3.5"/>',
+  terminal: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="m7 9.5 3 2.5-3 2.5M13 15h4"/>',
+  gear: '<circle cx="12" cy="12" r="3"/><path d="M19.4 13.5a1.7 1.7 0 0 0 .35 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.35 1.7 1.7 0 0 0-1.05 1.57V19.5a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1.05-1.57 1.7 1.7 0 0 0-1.87.35l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .35-1.87 1.7 1.7 0 0 0-1.57-1.05H4.5a2 2 0 1 1 0-4h.09A1.7 1.7 0 0 0 6.16 9.4a1.7 1.7 0 0 0-.35-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 10.5 5.05H10.6a1.7 1.7 0 0 0 1.05-1.57V4.5a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1.05 1.57 1.7 1.7 0 0 0 1.87-.35l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.35 1.87v.1a1.7 1.7 0 0 0 1.57 1.05h.09a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.57 1.05Z"/>',
+  user: '<circle cx="12" cy="8.5" r="3.5"/><path d="M4.5 20a7.5 7.5 0 0 1 15 0"/>',
+  users: '<circle cx="9" cy="8" r="3"/><path d="M2.5 19a6.5 6.5 0 0 1 13 0"/><circle cx="17.5" cy="8.5" r="2.5"/><path d="M15 6.2A4 4 0 0 1 21.5 9"/>',
+  logout: '<path d="M9 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h3"/><path d="M14 8l4 4-4 4M18 12H9"/>',
+  globe: '<circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c2.4 2.3 3.6 5.2 3.6 8.5s-1.2 6.2-3.6 8.5c-2.4-2.3-3.6-5.2-3.6-8.5S9.6 5.8 12 3.5Z"/>',
+  bell: '<path d="M6 9.5a6 6 0 0 1 12 0c0 4 1.5 5.5 1.5 5.5H4.5S6 13.5 6 9.5Z"/><path d="M10 18.5a2 2 0 0 0 4 0"/>',
+  sun: '<circle cx="12" cy="12" r="4"/><path d="M12 3v1.6M12 19.4V21M4.9 4.9l1.15 1.15M17.95 17.95l1.15 1.15M3 12h1.6M19.4 12H21M4.9 19.1l1.15-1.15M17.95 6.05l1.15-1.15"/>',
+  moon: '<path d="M20 14.2A8.5 8.5 0 0 1 9.8 4a8.5 8.5 0 1 0 10.2 10.2Z"/>',
+  menu: '<path d="M4 6.5h16M4 12h16M4 17.5h16"/>'
+};
+export const icon = (name, cls = 'ic') =>
+  `<span class="${cls}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"
+     stroke-linecap="round" stroke-linejoin="round">${ICON_PATHS[name] || ''}</svg></span>`;
+
 /** Very small Markdown subset — enough for lesson bodies, and it escapes first. */
 export function markdown(src) {
   const blocks = [];
