@@ -103,6 +103,7 @@
   "course.chat": "Course chat",
   "course.codeCopied": "Code copied",
   "course.regenerate": "New code",
+  "course.confirmDelete": "Delete this course? Its lessons and enrollments will be permanently deleted too.",
   "classes.hub": "Classes",
   "classes.newClass": "New class",
   "classes.courses": "courses",

@@ -590,14 +590,23 @@ export async function courseView({ id }, out) {
     <div class="field"><label>Status</label>
       <select id="st"><option value="draft" ${course.status === 'draft' ? 'selected' : ''}>${t('common.draft')}</option>
         <option value="published" ${course.status === 'published' ? 'selected' : ''}>${t('common.published')}</option></select></div>
-    <button class="btn btn-primary" id="sv">${t('common.save')}</button>`,
-    { onMount: (root, close) => root.querySelector('#sv').onclick = async () => {
-        await api.patch(`/courses/${id}`, {
-          title: root.querySelector('#ti').value,
-          description: root.querySelector('#de').value,
-          status: root.querySelector('#st').value
-        });
-        close(); router.resolve();
+    <div class="row"><button class="btn btn-primary" id="sv">${t('common.save')}</button>
+      <button class="btn btn-danger" id="del">${t('common.delete')}</button></div>`,
+    { onMount: (root, close) => {
+        root.querySelector('#sv').onclick = async () => {
+          await api.patch(`/courses/${id}`, {
+            title: root.querySelector('#ti').value,
+            description: root.querySelector('#de').value,
+            status: root.querySelector('#st').value
+          });
+          close(); router.resolve();
+        };
+        root.querySelector('#del').onclick = async () => {
+          if (!confirm(t('course.confirmDelete'))) return;
+          await api.del(`/courses/${id}`);
+          close();
+          router.go(course.class ? `/classes/${course.class.id}` : '/courses');
+        };
       } }));
 
   showTab('lessons');

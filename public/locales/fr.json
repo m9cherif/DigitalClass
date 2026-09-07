@@ -103,6 +103,7 @@
   "course.chat": "Discussion du cours",
   "course.codeCopied": "Code copié",
   "course.regenerate": "Nouveau code",
+  "course.confirmDelete": "Supprimer ce cours ? Ses leçons et inscriptions seront aussi supprimées définitivement.",
   "classes.hub": "Classes",
   "classes.newClass": "Nouvelle classe",
   "classes.courses": "cours",

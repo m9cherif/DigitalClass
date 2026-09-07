@@ -103,6 +103,7 @@
   "course.chat": "دردشة الدرس",
   "course.codeCopied": "تم نسخ الرمز",
   "course.regenerate": "رمز جديد",
+  "course.confirmDelete": "حذف هذا الدرس؟ ستُحذف حصصه وتسجيلاته نهائيًا أيضًا.",
   "classes.hub": "الأقسام",
   "classes.newClass": "قسم جديد",
   "classes.courses": "دروس",
