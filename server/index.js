@@ -34,7 +34,10 @@ setInterval(() => {
 }, WINDOW).unref();
 
 app.use('/api', (req, res, next) => {
-  const login = ['/auth/login', '/auth/register', '/auth/verify-email', '/auth/resend-otp', '/auth/google', '/auth/microsoft']
+  const login = [
+    '/auth/login', '/auth/register', '/auth/verify-email', '/auth/resend-otp',
+    '/auth/google', '/auth/microsoft', '/auth/facebook'
+  ]
     .some(p => req.path.startsWith(p));
   const key = `${req.ip}:${login ? 'auth' : 'api'}`;
   const limit = login ? 20 : 600;
@@ -77,7 +80,11 @@ app.use('/api', adminRoutes);
 app.get('/api/config', (_req, res) => {
   res.json({
     googleClientId: process.env.GOOGLE_CLIENT_ID || null,
-    microsoftClientId: process.env.MICROSOFT_CLIENT_ID || null
+    microsoftClientId: process.env.MICROSOFT_CLIENT_ID || null,
+    // The app secret backing this is never sent — only the two IDs the
+    // client-side SDK needs to open the login dialog.
+    facebookAppId: process.env.FACEBOOK_APP_ID || null,
+    facebookConfigId: process.env.FACEBOOK_CONFIG_ID || null
   });
 });
 

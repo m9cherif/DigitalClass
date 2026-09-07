@@ -169,6 +169,17 @@ export const session = {
     return r.user;
   },
 
+  /** Same handshake again, against /auth/facebook — `credential` here is
+   *  the short-lived code from FB.login, not an ID token. */
+  async facebook(credential, role) {
+    const r = await api.post('/auth/facebook', { code: credential, role });
+    if (r.needsRole) return r;
+    api.setToken(r.token);
+    await this.refresh();
+    connectSocket();
+    return r.user;
+  },
+
   logout() {
     api.setToken(null);
     store.user = null;

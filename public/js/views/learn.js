@@ -26,6 +26,7 @@ function waitFor(ready, timeoutMs = 10000) {
 }
 const waitForGoogleSdk = async () => (await waitFor(() => window.google?.accounts?.id)) ? window.google : null;
 const waitForMsalSdk = async () => (await waitFor(() => window.msal?.PublicClientApplication)) ? window.msal : null;
+const waitForFbSdk = async () => (await waitFor(() => window.FB)) ? window.FB : null;
 
 /** A single flaky request shouldn't permanently hide the SSO buttons for
  *  the rest of the page load — retry once before giving up on it. */
@@ -38,7 +39,7 @@ async function fetchConfig() {
       else console.warn('[auth] /config failed twice, hiding SSO sign-in', err);
     }
   }
-  return { googleClientId: null, microsoftClientId: null };
+  return { googleClientId: null, microsoftClientId: null, facebookAppId: null, facebookConfigId: null };
 }
 
 let msalInstance = null;
@@ -53,10 +54,21 @@ async function getMsalInstance(clientId) {
   return msalInstance;
 }
 
+let fbInitialized = false;
+async function getFbSdk(appId) {
+  const FB = await waitForFbSdk();
+  if (!FB) return null;
+  if (!fbInitialized) {
+    FB.init({ appId, version: 'v20.0', xfbml: false });
+    fbInitialized = true;
+  }
+  return FB;
+}
+
 export function authView(mode) {
   return async (_p, out) => {
     const isLogin = mode === 'login';
-    const { googleClientId, microsoftClientId } = await fetchConfig();
+    const { googleClientId, microsoftClientId, facebookAppId, facebookConfigId } = await fetchConfig();
     out.innerHTML = `
       <div style="max-inline-size:430px;margin-inline:auto;padding-block:6vh">
         <div class="center mb">
@@ -197,6 +209,29 @@ export function authView(mode) {
       };
     };
 
+    const mountFacebookButton = () => {
+      if (!facebookAppId || !facebookConfigId) return;
+      const btn = out.querySelector('#fbBtn');
+      if (!btn) return;
+      btn.onclick = async () => {
+        const err = out.querySelector('#authErr');
+        try {
+          const FB = await getFbSdk(facebookAppId);
+          if (!FB) return console.warn('[auth] Facebook SDK never loaded — the Facebook button is inert');
+          const code = await new Promise((resolve, reject) => {
+            FB.login(response => {
+              if (response.authResponse?.code) resolve(response.authResponse.code);
+              else reject(new Error('cancelled'));
+            }, { config_id: facebookConfigId, response_type: 'code', override_default_response_type: true });
+          });
+          await onOAuthCredential('facebook', code);
+        } catch (ex) {
+          if (ex.message === 'cancelled') return;
+          if (err) err.textContent = t('auth.facebook_auth_failed');
+        }
+      };
+    };
+
     const renderForm = () => {
       card.innerHTML = `
         <h2>${t(isLogin ? 'auth.login' : 'auth.register')}</h2>
@@ -206,7 +241,12 @@ export function authView(mode) {
             <svg width="18" height="18" viewBox="0 0 21 21"><rect width="10" height="10" x="1" y="1" fill="#f25022"/><rect width="10" height="10" x="11" y="1" fill="#7fba00"/><rect width="10" height="10" x="1" y="11" fill="#00a4ef"/><rect width="10" height="10" x="11" y="11" fill="#ffb900"/></svg>
             ${t('auth.continueWithMicrosoft')}
           </button>` : ''}
-        ${(googleClientId || microsoftClientId) ? `<div class="center tiny muted mb">${t('auth.or')}</div>` : ''}
+        ${(facebookAppId && facebookConfigId) ? `
+          <button type="button" class="btn btn-block mb" id="fbBtn">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="#1877F2"><path d="M24 12.07C24 5.4 18.63 0 12 0S0 5.4 0 12.07C0 18.1 4.39 23.09 10.13 24v-8.44H7.08v-3.49h3.05V9.41c0-3.02 1.79-4.7 4.53-4.7 1.31 0 2.68.24 2.68.24v2.97h-1.51c-1.49 0-1.95.93-1.95 1.89v2.26h3.32l-.53 3.49h-2.79V24C19.61 23.09 24 18.1 24 12.07"/></svg>
+            ${t('auth.continueWithFacebook')}
+          </button>` : ''}
+        ${(googleClientId || microsoftClientId || (facebookAppId && facebookConfigId)) ? `<div class="center tiny muted mb">${t('auth.or')}</div>` : ''}
         <form id="authForm">
           ${isLogin ? '' : `
             <div class="field"><label>${t('auth.name')}</label><input name="name" required></div>
@@ -228,6 +268,7 @@ export function authView(mode) {
 
       mountGoogleButton();
       mountMicrosoftButton();
+      mountFacebookButton();
 
       out.querySelector('#authForm').onsubmit = async e => {
         e.preventDefault();

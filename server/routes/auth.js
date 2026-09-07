@@ -5,6 +5,7 @@ import { progress } from '../lib/gamification.js';
 import { sendMail } from '../lib/mail.js';
 import { verifyGoogleIdToken } from '../lib/googleAuth.js';
 import { verifyMicrosoftIdToken } from '../lib/microsoftAuth.js';
+import { exchangeFacebookCode } from '../lib/facebookAuth.js';
 import {
   ROLES, hashPassword, checkPassword, signToken, publicUser, requireAuth
 } from '../middleware/auth.js';
@@ -155,6 +156,47 @@ router.post('/microsoft', async (req, res) => {
   const user = db.users.insert({
     name: String(payload.name || email.split('@')[0]).slice(0, 80),
     email, role, lang: 'fr', status: 'active', emailVerified: true, microsoftId: payload.sub || payload.oid,
+    avatar: null, bio: '', xp: 0, level: 1, streak: 0, longestStreak: 0,
+    childIds: [], theme: 'dark'
+  });
+  res.status(201).json({ token: signToken(user), user: publicUser(user) });
+});
+
+/** Same needsRole handshake as /google and /microsoft, fed by a Facebook
+ *  Graph API profile instead of an ID token — Facebook's code flow needs a
+ *  server-side exchange (the app secret), so the client only ever hands us
+ *  the short-lived `code` from FB.login. */
+router.post('/facebook', async (req, res) => {
+  const { code, role } = req.body || {};
+  if (!code) return res.status(400).json({ error: 'invalid_verification' });
+
+  let profile;
+  try {
+    profile = await exchangeFacebookCode(code);
+  } catch (err) {
+    return res.status(err.status || 400).json({ error: err.code || 'facebook_auth_failed' });
+  }
+  if (!profile.email || !EMAIL_RE.test(profile.email)) {
+    return res.status(400).json({ error: 'facebook_email_unverified' });
+  }
+  const email = profile.email.toLowerCase();
+
+  const existing = db.users.findOne({ email });
+  if (existing) {
+    if (existing.status === 'suspended') return res.status(403).json({ error: 'account_suspended' });
+    const updated = db.users.update(existing.id, { lastLoginAt: now(), facebookId: profile.id });
+    return res.json({ token: signToken(updated), user: publicUser(updated) });
+  }
+
+  if (!role) return res.json({ needsRole: true, name: profile.name, email });
+  if (!ROLES.includes(role)) return res.status(400).json({ error: 'invalid_role' });
+  if (role === 'admin' && db.users.count({ role: 'admin' }) > 0) {
+    return res.status(400).json({ error: 'invalid_role' });
+  }
+
+  const user = db.users.insert({
+    name: String(profile.name || email.split('@')[0]).slice(0, 80),
+    email, role, lang: 'fr', status: 'active', emailVerified: true, facebookId: profile.id,
     avatar: null, bio: '', xp: 0, level: 1, streak: 0, longestStreak: 0,
     childIds: [], theme: 'dark'
   });
