@@ -11,8 +11,10 @@ const desc = c => i18n.pick(c, 'description', c.description);
 
 /** Polls for the Google Identity Services script (loaded via a plain
  *  <script> tag in index.html) to finish loading, since module code can run
- *  before it does. */
-function waitForGoogleSdk(timeoutMs = 5000) {
+ *  before it does. Mobile networks are slower and less reliable than the
+ *  desktop connections this was first tested on, so this allows more time
+ *  and doesn't give up after a single failed attempt. */
+function waitForGoogleSdk(timeoutMs = 10000) {
   return new Promise(resolve => {
     const start = Date.now();
     (function poll() {
@@ -23,10 +25,24 @@ function waitForGoogleSdk(timeoutMs = 5000) {
   });
 }
 
+/** A single flaky request shouldn't permanently hide the Google button for
+ *  the rest of the page load — retry once before giving up on it. */
+async function fetchConfig() {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      return await api.get('/config');
+    } catch (err) {
+      if (attempt === 0) await new Promise(r => setTimeout(r, 500));
+      else console.warn('[auth] /config failed twice, hiding Google sign-in', err);
+    }
+  }
+  return { googleClientId: null };
+}
+
 export function authView(mode) {
   return async (_p, out) => {
     const isLogin = mode === 'login';
-    const { googleClientId } = await api.get('/config').catch(() => ({ googleClientId: null }));
+    const { googleClientId } = await fetchConfig();
     out.innerHTML = `
       <div style="max-inline-size:430px;margin-inline:auto;padding-block:6vh">
         <div class="center mb">
@@ -130,14 +146,19 @@ export function authView(mode) {
       const container = out.querySelector('#googleBtn');
       if (!container) return;
       const google = await waitForGoogleSdk();
-      if (!google) return;
+      if (!google) return console.warn('[auth] Google Identity Services script never loaded — hiding the button');
       google.accounts.id.initialize({ client_id: googleClientId, callback: onGoogleCredential });
       // renderButton's width is a fixed pixel value, not responsive — a
       // constant here overflowed narrow phone screens and pushed the button
       // off-screen. Size it to whatever room the container actually has.
+      // (Deliberately not deferred to requestAnimationFrame: rAF never
+      // fires while the page isn't being actively painted — a backgrounded
+      // tab, a screen that just turned off — which silently kept the
+      // button from ever rendering at all.)
+      const width = container.getBoundingClientRect().width || 300;
       google.accounts.id.renderButton(container, {
         theme: document.documentElement.dataset.theme === 'light' ? 'outline' : 'filled_black',
-        size: 'large', width: Math.min(360, container.getBoundingClientRect().width), locale: i18n.lang
+        size: 'large', width: Math.min(360, width), locale: i18n.lang
       });
     };
 
