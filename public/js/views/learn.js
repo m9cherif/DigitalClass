@@ -132,9 +132,12 @@ export function authView(mode) {
       const google = await waitForGoogleSdk();
       if (!google) return;
       google.accounts.id.initialize({ client_id: googleClientId, callback: onGoogleCredential });
+      // renderButton's width is a fixed pixel value, not responsive — a
+      // constant here overflowed narrow phone screens and pushed the button
+      // off-screen. Size it to whatever room the container actually has.
       google.accounts.id.renderButton(container, {
         theme: document.documentElement.dataset.theme === 'light' ? 'outline' : 'filled_black',
-        size: 'large', width: 360, locale: i18n.lang
+        size: 'large', width: Math.min(360, container.getBoundingClientRect().width), locale: i18n.lang
       });
     };
 
