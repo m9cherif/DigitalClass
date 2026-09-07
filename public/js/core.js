@@ -159,6 +159,16 @@ export const session = {
     return r.user;
   },
 
+  /** Same handshake as google() above, against /auth/microsoft. */
+  async microsoft(credential, role) {
+    const r = await api.post('/auth/microsoft', { credential, role });
+    if (r.needsRole) return r;
+    api.setToken(r.token);
+    await this.refresh();
+    connectSocket();
+    return r.user;
+  },
+
   logout() {
     api.setToken(null);
     store.user = null;

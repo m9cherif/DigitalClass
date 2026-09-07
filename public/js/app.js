@@ -21,7 +21,7 @@ function chrome() {
   }
 
   // One entry per destination, and only what this role actually uses:
-  // admins administer, parents observe, students learn, teachers teach.
+  // admins administer, students learn, teachers teach.
   const plays = u.role === 'student' || u.role === 'teacher';
   const nav = [
     { href: '/', icon: u.role === 'admin' ? 'gear' : 'home',
@@ -69,7 +69,6 @@ function chrome() {
             <div class="tiny muted">${t('lb.level')} ${store.progress?.level} · ${i18n.num(u.xp)} XP · 🔥 ${u.streak || 0}</div>
           </div>
           <a class="dropdown-item" href="/profile">${icon('user')} ${t('nav.profile')}</a>
-          ${u.role === 'parent' ? `<a class="dropdown-item" href="/">${icon('users')} ${t('nav.children')}</a>` : ''}
           <div class="dropdown-item" id="logout">${icon('logout')} ${t('nav.logout')}</div>
         </div>
       </div>
@@ -148,7 +147,6 @@ async function loadNotifications() {
       case 'assignment': return t('notif.assignment', { title: d.title });
       case 'new_student': return t('notif.new_student');
       case 'dm': return t('notif.dm', { from: d.from });
-      case 'guardian_linked': return t('notif.guardian_linked');
       default: return n.kind;
     }
   };
@@ -195,7 +193,6 @@ router.add('/courses/:id', Learn.courseView);
 router.add('/courses/:id/roster', Learn.rosterView, { roles: ['teacher', 'admin'] });
 router.add('/courses/:id/lessons/:lessonId', Learn.lessonView);
 router.add('/assignments/:id', Learn.assignmentGradeView);
-router.add('/children/:id', Learn.childReportView, { roles: ['parent', 'admin'] });
 
 router.add('/quiz/:id', Quiz.quizView, { live: false });
 router.add('/quiz/:id/edit', Quiz.quizEditView, { roles: ['teacher', 'admin'] });

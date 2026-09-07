@@ -265,11 +265,6 @@ export async function profileView({ id }, out) {
               </select></div>
           </div>
           <button class="btn btn-primary" id="save">${t('common.save')}</button>
-          ${p.user.role === 'student' ? `
-            <div class="card mt small" style="background:var(--surface-2)">
-              <label>${t('profile.studentCode')}</label>
-              <div class="mono" style="font-size:1.05rem;user-select:all">${esc(store.user.id)}</div>
-            </div>` : ''}
           <button class="btn mt" id="pw">${t('profile.changePassword')}</button>
         ` : `<h3>${t('dash.certificates')}</h3>`}
       </div>
@@ -358,7 +353,7 @@ export async function adminView(_p, out) {
         <div class="card">
           <h3>${t('admin.people')}</h3>
           ${[['student', stats.users.students], ['teacher', stats.users.teachers],
-             ['parent', stats.users.parents], ['admin', roleCount('admin')]]
+             ['admin', roleCount('admin')]]
             .map(([role, n]) => `
               <div class="between" style="padding:.4rem 0;border-block-end:1px solid var(--border)">
                 <span>${t('auth.role.' + role)}</span><strong>${n}</strong>
@@ -446,7 +441,7 @@ export async function adminView(_p, out) {
           </span>
         </span>
         <select data-role="${u.id}" class="role-select">
-          ${['student', 'teacher', 'parent', 'admin'].map(r =>
+          ${['student', 'teacher', 'admin'].map(r =>
             `<option value="${r}" ${u.role === r ? 'selected' : ''}>${t('auth.role.' + r)}</option>`).join('')}
         </select>
         <button class="btn btn-sm ${u.status === 'active' ? 'btn-danger' : 'btn-success'}" data-toggle="${u.id}">

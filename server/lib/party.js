@@ -38,15 +38,19 @@ export function publicRoom(room) {
   };
 }
 
-export function createRoom({ quiz, questions, host, options = {} }) {
+export function createRoom({ quiz, questions, host, options = {}, classId }) {
   const pin = newPin();
   // A room scoped to a class (hosted from inside a Class Hub) is kept out of
   // the homepage's global "live now"/history lists and vice versa — the two
-  // hubs never mix rooms, only the underlying game engine is shared.
+  // hubs never mix rooms, only the underlying game engine is shared. The hub
+  // the host is standing in decides the room's class explicitly — it is not
+  // inferred from the quiz's own course, so a class with no courses of its
+  // own yet can still host using any quiz the teacher has.
   const course = db.courses.byId(quiz.courseId);
+  const resolvedClassId = classId !== undefined ? classId : (course?.classId || null);
   const room = {
     pin, id: id('party_'),
-    quizId: quiz.id, courseId: quiz.courseId, classId: course?.classId || null, title: quiz.title,
+    quizId: quiz.id, courseId: quiz.courseId, classId: resolvedClassId, title: quiz.title,
     hostId: host.id, hostName: host.name,
     mode: options.mode || 'classic',            // classic | team | survival | marathon
     teamMode: options.mode === 'team',

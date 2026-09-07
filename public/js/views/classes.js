@@ -242,7 +242,7 @@ export async function classDetailView({ id }, out) {
     host.innerHTML = `
       <div class="card table-wrap"><table>
         <thead><tr><th>${t('lb.student')}</th><th>${t('course.progress')}</th>
-          <th>${t('quiz.attempts')}</th><th>${t('gradebook.average')}</th><th>${t('parent.lastActive')}</th></tr></thead>
+          <th>${t('quiz.attempts')}</th><th>${t('gradebook.average')}</th><th>${t('common.lastActive')}</th><th></th></tr></thead>
         <tbody>${r.roster.map(row => `
           <tr>
             <td class="row">${avatar(row.student)} ${esc(row.student.name)}</td>
@@ -253,8 +253,16 @@ export async function classDetailView({ id }, out) {
             <td>${row.attempts}</td>
             <td>${row.averageScore != null ? `<span class="badge badge-${percentColor(row.averageScore)}">${row.averageScore}%</span>` : '—'}</td>
             <td class="tiny muted">${row.lastActive || '—'}</td>
-          </tr>`).join('') || `<tr><td colspan="5" class="empty-state">${t('common.empty')}</td></tr>`}</tbody>
+            <td><button class="btn btn-sm btn-danger" data-remove="${row.student.id}">${t('classes.removeStudent')}</button></td>
+          </tr>`).join('') || `<tr><td colspan="6" class="empty-state">${t('common.empty')}</td></tr>`}</tbody>
       </table></div>`;
+
+    host.querySelectorAll('[data-remove]').forEach(b => b.onclick = async () => {
+      if (!confirm(t('classes.confirmRemoveStudent'))) return;
+      await api.del(`/classes/${id}/members/${b.dataset.remove}`);
+      toast('✅ ' + t('classes.studentRemoved'), 'success');
+      loadRoster();
+    });
   }
 
   showTab('courses');

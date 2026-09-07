@@ -9,23 +9,25 @@ const desc = c => i18n.pick(c, 'description', c.description);
 
 /* ------------------------------------------------------------------ auth */
 
-/** Polls for the Google Identity Services script (loaded via a plain
- *  <script> tag in index.html) to finish loading, since module code can run
- *  before it does. Mobile networks are slower and less reliable than the
- *  desktop connections this was first tested on, so this allows more time
- *  and doesn't give up after a single failed attempt. */
-function waitForGoogleSdk(timeoutMs = 10000) {
+/** Generic poll for an SDK loaded via a plain <script> tag in index.html,
+ *  since module code can run before it finishes. Mobile networks are slower
+ *  and less reliable than the desktop connections this was first tested on,
+ *  so this allows more time and doesn't give up after a single failed
+ *  attempt at fetching /config below. */
+function waitFor(ready, timeoutMs = 10000) {
   return new Promise(resolve => {
     const start = Date.now();
     (function poll() {
-      if (window.google?.accounts?.id) return resolve(window.google);
-      if (Date.now() - start > timeoutMs) return resolve(null);
+      if (ready()) return resolve(true);
+      if (Date.now() - start > timeoutMs) return resolve(false);
       setTimeout(poll, 100);
     })();
   });
 }
+const waitForGoogleSdk = async () => (await waitFor(() => window.google?.accounts?.id)) ? window.google : null;
+const waitForMsalSdk = async () => (await waitFor(() => window.msal?.PublicClientApplication)) ? window.msal : null;
 
-/** A single flaky request shouldn't permanently hide the Google button for
+/** A single flaky request shouldn't permanently hide the SSO buttons for
  *  the rest of the page load — retry once before giving up on it. */
 async function fetchConfig() {
   for (let attempt = 0; attempt < 2; attempt++) {
@@ -33,16 +35,28 @@ async function fetchConfig() {
       return await api.get('/config');
     } catch (err) {
       if (attempt === 0) await new Promise(r => setTimeout(r, 500));
-      else console.warn('[auth] /config failed twice, hiding Google sign-in', err);
+      else console.warn('[auth] /config failed twice, hiding SSO sign-in', err);
     }
   }
-  return { googleClientId: null };
+  return { googleClientId: null, microsoftClientId: null };
+}
+
+let msalInstance = null;
+async function getMsalInstance(clientId) {
+  if (msalInstance) return msalInstance;
+  const msal = await waitForMsalSdk();
+  if (!msal) return null;
+  msalInstance = new msal.PublicClientApplication({
+    auth: { clientId, authority: 'https://login.microsoftonline.com/common', redirectUri: window.location.origin }
+  });
+  await msalInstance.initialize();
+  return msalInstance;
 }
 
 export function authView(mode) {
   return async (_p, out) => {
     const isLogin = mode === 'login';
-    const { googleClientId } = await fetchConfig();
+    const { googleClientId, microsoftClientId } = await fetchConfig();
     out.innerHTML = `
       <div style="max-inline-size:430px;margin-inline:auto;padding-block:6vh">
         <div class="center mb">
@@ -104,14 +118,14 @@ export function authView(mode) {
       };
     };
 
-    /** First-ever Google sign-in: the account can't be created until we know
-     *  which role it should have. */
-    const renderGoogleRole = ({ credential, name, email }) => {
+    /** First-ever sign-in through either provider: the account can't be
+     *  created until we know which role it should have. */
+    const renderOAuthRole = (provider, { credential, name, email }) => {
       card.innerHTML = `
         <h2>${t('auth.chooseRole')}</h2>
         <p class="small muted">${esc(name || email)}</p>
         <div class="stack" id="roleList">
-          ${['student', 'teacher', 'parent'].map(r =>
+          ${['student', 'teacher'].map(r =>
             `<button class="btn btn-block" data-role="${r}">${t('auth.role.' + r)}</button>`).join('')}
         </div>
         <div id="roleErr" class="small mt" style="color:var(--danger)"></div>`;
@@ -120,7 +134,7 @@ export function authView(mode) {
         const err = out.querySelector('#roleErr');
         err.textContent = '';
         try {
-          await session.google(credential, b.dataset.role);
+          await session[provider](credential, b.dataset.role);
           document.dispatchEvent(new CustomEvent('dc:auth'));
           router.go('/');
         } catch (ex) {
@@ -129,15 +143,15 @@ export function authView(mode) {
       });
     };
 
-    const onGoogleCredential = async ({ credential }) => {
+    const onOAuthCredential = async (provider, credential) => {
       const err = out.querySelector('#authErr');
       try {
-        const r = await session.google(credential);
-        if (r?.needsRole) return renderGoogleRole({ credential, name: r.name, email: r.email });
+        const r = await session[provider](credential);
+        if (r?.needsRole) return renderOAuthRole(provider, { credential, name: r.name, email: r.email });
         document.dispatchEvent(new CustomEvent('dc:auth'));
         router.go('/');
       } catch {
-        if (err) err.textContent = t('auth.google_auth_failed');
+        if (err) err.textContent = t('auth.' + provider + '_auth_failed');
       }
     };
 
@@ -147,7 +161,10 @@ export function authView(mode) {
       if (!container) return;
       const google = await waitForGoogleSdk();
       if (!google) return console.warn('[auth] Google Identity Services script never loaded — hiding the button');
-      google.accounts.id.initialize({ client_id: googleClientId, callback: onGoogleCredential });
+      google.accounts.id.initialize({
+        client_id: googleClientId,
+        callback: ({ credential }) => onOAuthCredential('google', credential)
+      });
       // renderButton's width is a fixed pixel value, not responsive — a
       // constant here overflowed narrow phone screens and pushed the button
       // off-screen. Size it to whatever room the container actually has.
@@ -162,12 +179,34 @@ export function authView(mode) {
       });
     };
 
+    const mountMicrosoftButton = () => {
+      if (!microsoftClientId) return;
+      const btn = out.querySelector('#msBtn');
+      if (!btn) return;
+      btn.onclick = async () => {
+        const err = out.querySelector('#authErr');
+        try {
+          const instance = await getMsalInstance(microsoftClientId);
+          if (!instance) return console.warn('[auth] MSAL script never loaded — the Microsoft button is inert');
+          const result = await instance.loginPopup({ scopes: ['openid', 'profile', 'email'] });
+          await onOAuthCredential('microsoft', result.idToken);
+        } catch (ex) {
+          if (ex?.errorCode === 'user_cancelled') return;
+          if (err) err.textContent = t('auth.microsoft_auth_failed');
+        }
+      };
+    };
+
     const renderForm = () => {
       card.innerHTML = `
         <h2>${t(isLogin ? 'auth.login' : 'auth.register')}</h2>
-        ${googleClientId ? `
-          <div id="googleBtn" class="center mb"></div>
-          <div class="center tiny muted mb">${t('auth.or')}</div>` : ''}
+        ${googleClientId ? `<div id="googleBtn" class="center mb"></div>` : ''}
+        ${microsoftClientId ? `
+          <button type="button" class="btn btn-block mb" id="msBtn">
+            <svg width="18" height="18" viewBox="0 0 21 21"><rect width="10" height="10" x="1" y="1" fill="#f25022"/><rect width="10" height="10" x="11" y="1" fill="#7fba00"/><rect width="10" height="10" x="1" y="11" fill="#00a4ef"/><rect width="10" height="10" x="11" y="11" fill="#ffb900"/></svg>
+            ${t('auth.continueWithMicrosoft')}
+          </button>` : ''}
+        ${(googleClientId || microsoftClientId) ? `<div class="center tiny muted mb">${t('auth.or')}</div>` : ''}
         <form id="authForm">
           ${isLogin ? '' : `
             <div class="field"><label>${t('auth.name')}</label><input name="name" required></div>
@@ -175,7 +214,6 @@ export function authView(mode) {
               <select name="role">
                 <option value="student">${t('auth.role.student')}</option>
                 <option value="teacher">${t('auth.role.teacher')}</option>
-                <option value="parent">${t('auth.role.parent')}</option>
                 <option value="admin">${t('auth.role.admin')}</option>
               </select></div>`}
           <div class="field"><label>${t('auth.email')}</label><input name="email" type="email" required dir="ltr"></div>
@@ -189,6 +227,7 @@ export function authView(mode) {
         </div>`;
 
       mountGoogleButton();
+      mountMicrosoftButton();
 
       out.querySelector('#authForm').onsubmit = async e => {
         e.preventDefault();
@@ -221,8 +260,6 @@ export function authView(mode) {
 export async function dashboardView(_p, out) {
   const d = await api.get('/dashboard');
   const u = store.user;
-
-  if (d.role === 'parent') return parentDashboard(d, out);
 
   const isTeacher = d.role === 'teacher' || d.role === 'admin';
   const s = d.stats;
@@ -315,69 +352,6 @@ export async function dashboardView(_p, out) {
           <div class="small muted">${s.needsReview} ${t('dash.needsReview')}</div></span>
         <span class="btn btn-primary btn-sm">${t('common.start')}</span>
       </a>` : ''}`;
-}
-
-function parentDashboard(d, out) {
-  out.innerHTML = `
-    <div class="between mb">
-      <h1>${t('parent.title')}</h1>
-      <button class="btn btn-primary" id="linkChild">+ ${t('parent.linkChild')}</button>
-    </div>
-    ${d.children.length ? `<div class="grid grid-2">${d.children.map(c => `
-      <div class="card">
-        <div class="row mb">${avatar(c.student, 'avatar-lg')}
-          <div><h3 style="margin:0">${esc(c.student.name)}</h3>
-            <div class="small muted">${t('parent.lastActive')}: ${c.lastActive || '—'}</div></div></div>
-        <div class="grid grid-3 mb">
-          <div class="stat"><div class="v">${c.averageScore ?? '—'}${c.averageScore != null ? '%' : ''}</div><div class="k">${t('parent.avgScore')}</div></div>
-          <div class="stat"><div class="v">${c.courses}</div><div class="k">${t('nav.courses')}</div></div>
-          <div class="stat"><div class="v">🔥 ${c.streak}</div><div class="k">${t('dash.streak')}</div></div>
-        </div>
-        ${sparkline(c.recentScores.map(r => r.percent), v => v + '%')}
-        <a class="btn btn-block mt" href="/children/${c.student.id}">${t('parent.report')}</a>
-      </div>`).join('')}</div>`
-    : `<div class="empty-state"><span class="ic">👨‍👩‍👧</span>${t('parent.noChildren')}</div>`}`;
-
-  out.querySelector('#linkChild').onclick = () => modal(`
-    <h2>${t('parent.linkChild')}</h2>
-    <div class="field"><label>${t('parent.childCode')}</label><input id="code" dir="ltr" placeholder="XXXXXXXXXXXX"></div>
-    <div class="row"><button class="btn btn-primary" id="go">${t('common.save')}</button>
-      <button class="btn" data-close>${t('common.cancel')}</button></div>`,
-    { onMount: (root, close) => {
-      root.querySelector('#go').onclick = async () => {
-        try {
-          await api.post('/auth/me/children', { studentCode: root.querySelector('#code').value.trim() });
-          close(); router.resolve();
-        } catch { toast(t('common.error'), 'error'); }
-      };
-    } });
-}
-
-export async function childReportView({ id }, out) {
-  const r = await api.get(`/courses/child/${id}/report`);
-  out.innerHTML = `
-    <a href="/" class="small">← ${t('common.back')}</a>
-    <div class="row mt mb">${avatar(r.student, 'avatar-lg')}<h1 style="margin:0">${esc(r.student.name)}</h1></div>
-    <div class="grid grid-4 mb">
-      <div class="stat"><div class="v">${r.stats.averageScore ?? '—'}%</div><div class="k">${t('parent.avgScore')}</div></div>
-      <div class="stat"><div class="v">${r.stats.attempts}</div><div class="k">${t('quiz.attempts')}</div></div>
-      <div class="stat"><div class="v">${r.stats.badges}</div><div class="k">${t('dash.badges')}</div></div>
-      <div class="stat"><div class="v">${r.stats.certificates.length}</div><div class="k">${t('dash.certificates')}</div></div>
-    </div>
-    <div class="grid grid-2">
-      <div class="card"><h3>${t('dash.myCourses')}</h3>
-        ${r.courses.map(c => `<div class="mb">
-          <div class="between small"><span>${esc(c.course?.title || '')}</span><span>${c.percent}%</span></div>
-          <div class="progress"><i style="inline-size:${c.percent}%"></i></div></div>`).join('') ||
-          `<div class="muted small">${t('common.empty')}</div>`}
-      </div>
-      <div class="card"><h3>${t('dash.recentScores')}</h3>
-        ${r.recent.length ? `<table><tbody>${r.recent.map(a => `
-          <tr><td>${esc(a.quiz || '')}</td><td class="tiny muted">${i18n.date(a.at)}</td>
-              <td><span class="badge badge-${percentColor(a.percent)}">${a.percent}%</span></td></tr>`).join('')}
-          </tbody></table>` : `<div class="muted small">${t('common.empty')}</div>`}
-      </div>
-    </div>`;
 }
 
 /* --------------------------------------------------------------- courses */
@@ -869,7 +843,7 @@ export async function rosterView({ id }, out) {
     <h1 class="mt">${t('course.roster')}</h1>
     <div class="card table-wrap"><table>
       <thead><tr><th>${t('lb.student')}</th><th>${t('course.progress')}</th>
-        <th>${t('quiz.attempts')}</th><th>${t('gradebook.average')}</th><th>${t('parent.lastActive')}</th><th></th></tr></thead>
+        <th>${t('quiz.attempts')}</th><th>${t('gradebook.average')}</th><th>${t('common.lastActive')}</th><th></th></tr></thead>
       <tbody>${roster.map(r => `
         <tr>
           <td class="row">${avatar(r.student)} ${esc(r.student.name)}</td>

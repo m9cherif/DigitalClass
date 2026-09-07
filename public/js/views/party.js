@@ -5,15 +5,18 @@ import * as Q from '../questions.js';
 /**
  * The party hub. With no classId this is the homepage hub: any published quiz,
  * a global "live now"/history list. With a classId (mounted from inside a
- * Class Hub) it is a second, independent hub — its quiz picker only offers
- * quizzes that belong to that class, and its live/history lists only ever
- * show rooms hosted from inside it. The two never share a room.
+ * Class Hub) it is a second, independent hub — its live/history lists only
+ * ever show rooms hosted from inside it, and the two never share a room.
+ * The quiz picker itself is never restricted to that class's own courses —
+ * a teacher can host from any quiz they have, even a class with no courses
+ * of its own yet — since the room is tagged with this hub's classId
+ * explicitly rather than inferred from the quiz's course.
  */
 export async function partyView({ classId } = {}, out) {
   const query = classId ? `?classId=${classId}` : '';
   const [{ rooms }, { quizzes }, { parties }, cls] = await Promise.all([
     api.get('/parties/live' + query),
-    api.get('/quizzes' + query).catch(() => ({ quizzes: [] })),
+    api.get('/quizzes').catch(() => ({ quizzes: [] })),
     api.get('/parties/history' + query).catch(() => ({ parties: [] })),
     classId ? api.get(`/classes/${classId}`).catch(() => null) : Promise.resolve(null)
   ]);
@@ -50,8 +53,8 @@ export async function partyView({ classId } = {}, out) {
                 <input id="secs" type="number" value="30" min="5" max="180"></div>
             </div>
             <button class="btn btn-primary btn-block" id="host">${t('party.host')}</button>`
-            : `<div class="muted small mb">${t(classId ? 'party.noClassQuizzes' : 'party.noQuizzes')}</div>
-               <a class="btn btn-sm" href="${classId ? `/classes/${classId}` : '/courses/new'}">+ ${t('course.newCourse')}</a>`}`
+            : `<div class="muted small mb">${t('party.noQuizzes')}</div>
+               <a class="btn btn-sm" href="/classes">+ ${t('course.newCourse')}</a>`}`
           : `<div class="muted small">${t('party.waiting')}</div>`}
       </div>
     </div>
@@ -80,7 +83,7 @@ export async function partyView({ classId } = {}, out) {
   out.querySelector('#host')?.addEventListener('click', () => {
     const sock = connectSocket();
     sock.emit('party:create', {
-      quizId: out.querySelector('#quiz').value,
+      quizId: out.querySelector('#quiz').value, classId,
       options: { mode: out.querySelector('#mode').value, secondsPerQuestion: Number(out.querySelector('#secs').value) }
     }, res => {
       if (res.error) return toast(t('common.error') + ': ' + res.error, 'error');

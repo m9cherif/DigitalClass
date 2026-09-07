@@ -3,7 +3,7 @@
  */
 import { Server } from 'socket.io';
 import { db, now, whenReady, dbEvents, COLLECTIONS } from './lib/db.js';
-import { verifyToken } from './middleware/auth.js';
+import { verifyToken, canEditClass } from './middleware/auth.js';
 import {
   createRoom, getRoom, joinRoom, leaveRoom, publicRoom, standings,
   currentQuestion, scoreAnswer, endRoom
@@ -48,12 +48,19 @@ export function attachRealtime(httpServer) {
 
     /* ------------------------------------------------------------ parties */
 
-    socket.on('party:create', ({ quizId, options }, ack = () => {}) => {
+    socket.on('party:create', ({ quizId, options, classId }, ack = () => {}) => {
       const quiz = db.quizzes.byId(quizId);
       if (!quiz) return ack({ error: 'quiz_not_found' });
       const questions = (quiz.questionIds || []).map(i => db.questions.byId(i)).filter(Boolean);
       if (!questions.length) return ack({ error: 'quiz_empty' });
-      const room = createRoom({ quiz, questions, host: socket.user, options });
+      // The hub the host is standing in decides the room's class — trust the
+      // client for which hub that is, but only once we've checked the host
+      // actually has the run of that class.
+      if (classId) {
+        const cls = db.classes.byId(classId);
+        if (!cls || !canEditClass(socket.user, cls)) return ack({ error: 'forbidden' });
+      }
+      const room = createRoom({ quiz, questions, host: socket.user, options, classId: classId || null });
       socket.join(`party:${room.pin}`);
       socket.data.pin = room.pin;
       ack({ room: publicRoom(room), pin: room.pin, isHost: true });

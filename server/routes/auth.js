@@ -4,8 +4,9 @@ import { db, now } from '../lib/db.js';
 import { progress } from '../lib/gamification.js';
 import { sendMail } from '../lib/mail.js';
 import { verifyGoogleIdToken } from '../lib/googleAuth.js';
+import { verifyMicrosoftIdToken } from '../lib/microsoftAuth.js';
 import {
-  ROLES, hashPassword, checkPassword, signToken, publicUser, requireAuth, requireRole
+  ROLES, hashPassword, checkPassword, signToken, publicUser, requireAuth
 } from '../middleware/auth.js';
 
 const router = Router();
@@ -119,6 +120,47 @@ router.post('/google', async (req, res) => {
   res.status(201).json({ token: signToken(user), user: publicUser(user) });
 });
 
+/** Mirrors /google exactly, just against Microsoft's identity platform —
+ *  same needsRole handshake for a first-ever sign-in, same instant login by
+ *  email match otherwise. */
+router.post('/microsoft', async (req, res) => {
+  const { credential, role } = req.body || {};
+  if (!credential) return res.status(400).json({ error: 'invalid_verification' });
+
+  let payload;
+  try {
+    payload = await verifyMicrosoftIdToken(credential);
+  } catch (err) {
+    return res.status(err.status || 400).json({ error: err.code || 'microsoft_auth_failed' });
+  }
+  const rawEmail = payload.email || payload.preferred_username || '';
+  if (!EMAIL_RE.test(rawEmail)) {
+    return res.status(400).json({ error: 'microsoft_email_unverified' });
+  }
+  const email = rawEmail.toLowerCase();
+
+  const existing = db.users.findOne({ email });
+  if (existing) {
+    if (existing.status === 'suspended') return res.status(403).json({ error: 'account_suspended' });
+    const updated = db.users.update(existing.id, { lastLoginAt: now(), microsoftId: payload.sub || payload.oid });
+    return res.json({ token: signToken(updated), user: publicUser(updated) });
+  }
+
+  if (!role) return res.json({ needsRole: true, name: payload.name, email });
+  if (!ROLES.includes(role)) return res.status(400).json({ error: 'invalid_role' });
+  if (role === 'admin' && db.users.count({ role: 'admin' }) > 0) {
+    return res.status(400).json({ error: 'invalid_role' });
+  }
+
+  const user = db.users.insert({
+    name: String(payload.name || email.split('@')[0]).slice(0, 80),
+    email, role, lang: 'fr', status: 'active', emailVerified: true, microsoftId: payload.sub || payload.oid,
+    avatar: null, bio: '', xp: 0, level: 1, streak: 0, longestStreak: 0,
+    childIds: [], theme: 'dark'
+  });
+  res.status(201).json({ token: signToken(user), user: publicUser(user) });
+});
+
 /** Completes registration: the OTP just emailed is the only thing standing
  *  between an unverified account and a real session. */
 router.post('/verify-email', async (req, res) => {
@@ -177,29 +219,5 @@ router.post('/me/password', requireAuth, (req, res) => {
   res.json({ ok: true });
 });
 
-/** A parent links a child by the code the student shares from their profile. */
-router.post('/me/children', requireRole('parent'), (req, res) => {
-  const child = db.users.findOne({ id: String(req.body?.studentCode || '').trim(), role: 'student' });
-  if (!child) return res.status(404).json({ error: 'student_not_found' });
-  const childIds = [...new Set([...(req.user.childIds || []), child.id])];
-  db.users.update(req.user.id, { childIds });
-  db.links.insert({ parentId: req.user.id, studentId: child.id });
-  db.notifications.insert({
-    userId: child.id, kind: 'guardian_linked', read: false,
-    data: { parentName: req.user.name }
-  });
-  res.json({ children: childIds.map(id => publicUser(db.users.byId(id))).filter(Boolean) });
-});
-
-router.get('/me/children', requireRole('parent'), (req, res) => {
-  res.json({ children: (req.user.childIds || []).map(id => publicUser(db.users.byId(id))).filter(Boolean) });
-});
-
-router.delete('/me/children/:id', requireRole('parent'), (req, res) => {
-  const childIds = (req.user.childIds || []).filter(i => i !== req.params.id);
-  db.users.update(req.user.id, { childIds });
-  db.links.removeWhere({ parentId: req.user.id, studentId: req.params.id });
-  res.json({ ok: true });
-});
 
 export default router;

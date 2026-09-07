@@ -45,25 +45,6 @@ router.get('/dashboard', requireAuth, (req, res) => {
     });
   }
 
-  if (u.role === 'parent') {
-    return res.json({
-      role: 'parent',
-      children: (u.childIds || []).map(id => {
-        const child = db.users.byId(id);
-        if (!child) return null;
-        const attempts = db.attempts.find({ userId: id, status: 'graded' });
-        return {
-          student: publicUser(child),
-          courses: db.enrollments.count({ userId: id, status: 'active' }),
-          averageScore: attempts.length ? +(attempts.reduce((s, a) => s + (a.result?.percent || 0), 0) / attempts.length).toFixed(1) : null,
-          streak: child.streak || 0, xp: child.xp || 0,
-          lastActive: child.lastActiveDay,
-          recentScores: attempts.slice(-8).map(a => ({ at: a.submittedAt, percent: a.result?.percent || 0 }))
-        };
-      }).filter(Boolean)
-    });
-  }
-
   // teacher / admin
   const courses = db.courses.all().filter(c => canEditCourse(u, c));
   const courseIds = new Set(courses.map(c => c.id));
@@ -246,7 +227,6 @@ router.get('/stats', requireRole('admin'), (_req, res) => {
       total: db.users.count(),
       students: db.users.count({ role: 'student' }),
       teachers: db.users.count({ role: 'teacher' }),
-      parents: db.users.count({ role: 'parent' }),
       active7d: db.users.all().filter(u => u.lastActiveDay &&
         u.lastActiveDay >= new Date(Date.now() - 7 * 864e5).toISOString().slice(0, 10)).length
     },

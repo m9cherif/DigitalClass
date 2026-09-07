@@ -11,8 +11,8 @@ export async function quizView({ id }, out) {
   const data = await api.get(`/quizzes/${id}`);
   const q = data.quiz;
   const best = data.attempts.filter(a => a.percent != null);
-  // Admins supervise and parents observe — neither ever answers questions.
-  const canAnswer = !['admin', 'parent'].includes(store.user.role);
+  // Admins supervise, never answer questions.
+  const canAnswer = store.user.role !== 'admin';
 
   out.innerHTML = `
     <a href="/courses/${q.courseId}" class="small">← ${t('common.back')}</a>

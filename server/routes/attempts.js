@@ -16,8 +16,8 @@ router.post('/start', requireAuth, (req, res) => {
   const quiz = db.quizzes.byId(req.body?.quizId);
   if (!quiz) return res.status(404).json({ error: 'quiz_not_found' });
   // Admins run the platform, they are not learners: no attempts, no scores,
-  // no leaderboard presence. Same for guardians, who only ever read reports.
-  if (req.user.role === 'admin' || req.user.role === 'parent') {
+  // no leaderboard presence.
+  if (req.user.role === 'admin') {
     return res.status(403).json({ error: 'role_cannot_attempt', role: req.user.role });
   }
   const course = db.courses.byId(quiz.courseId);
@@ -124,8 +124,7 @@ router.get('/:id', requireAuth, (req, res) => {
   if (!attempt) return res.status(404).json({ error: 'not_found' });
   const quiz = db.quizzes.byId(attempt.quizId);
   const teaching = canEditCourse(req.user, db.courses.byId(attempt.courseId));
-  const parent = req.user.role === 'parent' && (req.user.childIds || []).includes(attempt.userId);
-  if (attempt.userId !== req.user.id && !teaching && !parent) return res.status(403).json({ error: 'forbidden' });
+  if (attempt.userId !== req.user.id && !teaching) return res.status(403).json({ error: 'forbidden' });
 
   const questions = attempt.order.map(i => db.questions.byId(i)).filter(Boolean);
   const showKeys = teaching || quiz?.showAnswersAfter;
@@ -142,8 +141,7 @@ router.get('/', requireAuth, (req, res) => {
   const teaching = courseId ? canEditCourse(req.user, db.courses.byId(courseId)) : false;
   rows = rows.filter(a => a.userId === req.user.id ||
     (req.user.role === 'admin') ||
-    (teaching && a.courseId === courseId) ||
-    ((req.user.childIds || []).includes(a.userId)));
+    (teaching && a.courseId === courseId));
   if (quizId) rows = rows.filter(a => a.quizId === quizId);
   if (courseId) rows = rows.filter(a => a.courseId === courseId);
   if (userId) rows = rows.filter(a => a.userId === userId);

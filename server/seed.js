@@ -36,10 +36,6 @@ const students = [
   ['Mehdi Aouini', 'mehdi@digitalclass.dev', 'ar']
 ].map(([n, e, l]) => user(n, e, 'student', { lang: l, xp: Math.floor(Math.random() * 400) }));
 
-const parent = user('Fatma Toumi', 'parent@digitalclass.dev', 'parent', { childIds: [students[0].id, students[2].id] });
-db.links.insert({ parentId: parent.id, studentId: students[0].id });
-db.links.insert({ parentId: parent.id, studentId: students[2].id });
-
 /* ------------------------------------------------------------------ courses */
 
 const course = (teacher, o) => db.courses.insert({
@@ -599,7 +595,6 @@ console.log(`
     teacher  omar@digitalclass.dev      (AR — réseaux)
     teacher  sarah@digitalclass.dev     (EN — web & SQL)
     student  yasmine@digitalclass.dev   (+ 5 more students)
-    parent   parent@digitalclass.dev    (children: Yasmine, Lina)
 
   ${db.courses.count()} courses · ${db.lessons.count()} lessons · ${db.quizzes.count()} quizzes · ${db.questions.count()} questions
 `);

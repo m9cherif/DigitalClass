@@ -119,6 +119,20 @@ router.delete('/:id/leave', requireAuth, (req, res) => {
   res.json({ ok: true });
 });
 
+/** A teacher/admin removes a specific student from their class — access to
+ *  every course inside it goes with the membership; the student's own
+ *  progress/attempts are left untouched in case they rejoin later. */
+router.delete('/:id/members/:userId', requireAuth, (req, res) => {
+  const cls = db.classes.byId(req.params.id);
+  if (!cls) return res.status(404).json({ error: 'not_found' });
+  if (!canEditClass(req.user, cls)) return res.status(403).json({ error: 'forbidden' });
+  const n = db.classEnrollments.updateWhere(
+    { classId: cls.id, userId: req.params.userId, status: 'active' }, { status: 'removed' }
+  );
+  if (!n) return res.status(404).json({ error: 'not_a_member' });
+  res.json({ ok: true });
+});
+
 /** Rotate the code — used when it leaks or a term ends. */
 router.post('/:id/code/regenerate', requireAuth, (req, res) => {
   const cls = db.classes.byId(req.params.id);

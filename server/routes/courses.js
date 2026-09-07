@@ -3,7 +3,7 @@ import { db, id, now } from '../lib/db.js';
 import { awardXp } from '../lib/gamification.js';
 import {
   requireAuth, requireRole, canEditCourse, canEditClass, isEnrolled,
-  accessibleCourseIds, publicUser, isGuardianOf
+  accessibleCourseIds, publicUser
 } from '../middleware/auth.js';
 
 const router = Router();
@@ -363,41 +363,6 @@ router.post('/:id/resources', requireAuth, (req, res) => {
       courseId: course.id, title: req.body?.title || 'Resource',
       url: req.body?.url || '', kind: req.body?.kind || 'link', addedBy: req.user.id
     })
-  });
-});
-
-/** A parent's read-only window onto one of their children. */
-router.get('/child/:studentId/report', requireRole('parent', 'admin'), (req, res) => {
-  const studentId = req.params.studentId;
-  if (req.user.role === 'parent' && !isGuardianOf(req.user, studentId)) {
-    return res.status(403).json({ error: 'not_your_child' });
-  }
-  const student = db.users.byId(studentId);
-  if (!student) return res.status(404).json({ error: 'not_found' });
-  const attempts = db.attempts.find({ userId: studentId, status: 'graded' });
-  res.json({
-    student: publicUser(student),
-    courses: [...accessibleCourseIds(studentId)].map(courseId => {
-      const course = db.courses.byId(courseId);
-      const e = db.enrollments.findOne({ userId: studentId, courseId });
-      const total = Math.max(1, db.lessons.count({ courseId }));
-      return {
-        course: course && { id: course.id, title: course.title, color: course.color },
-        percent: Math.round((Object.values(e?.progress || {}).filter(p => p.done).length / total) * 100),
-        completed: e?.completed || false
-      };
-    }),
-    stats: {
-      attempts: attempts.length,
-      averageScore: attempts.length
-        ? +(attempts.reduce((s, a) => s + (a.result?.percent || 0), 0) / attempts.length).toFixed(1) : null,
-      xp: student.xp || 0, level: student.level || 1, streak: student.streak || 0,
-      badges: db.awards.count({ userId: studentId }),
-      certificates: db.certificates.find({ userId: studentId })
-    },
-    recent: attempts.slice(-10).reverse().map(a => ({
-      quiz: db.quizzes.byId(a.quizId)?.title, percent: a.result?.percent, at: a.submittedAt
-    }))
   });
 });
 

@@ -11,7 +11,7 @@ if (!process.env.JWT_SECRET && process.env.NODE_ENV === 'production') {
 }
 const TTL = '30d';
 
-export const ROLES = ['admin', 'teacher', 'student', 'parent'];
+export const ROLES = ['admin', 'teacher', 'student'];
 
 export const hashPassword = pw => bcrypt.hashSync(pw, 10);
 export const checkPassword = (pw, hash) => bcrypt.compareSync(pw, hash || '');
@@ -104,7 +104,3 @@ export function accessibleCourseIds(userId) {
   return ids;
 }
 
-/** A parent may read anything about a child linked to their account. */
-export function isGuardianOf(parent, studentId) {
-  return parent?.role === 'parent' && (parent.childIds || []).includes(studentId);
-}
