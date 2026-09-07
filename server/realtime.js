@@ -2,7 +2,7 @@
  * Socket.IO layer: live quiz parties, live A/V rooms, course chat and presence.
  */
 import { Server } from 'socket.io';
-import { db, now, whenReady } from './lib/db.js';
+import { db, now, whenReady, dbEvents, COLLECTIONS } from './lib/db.js';
 import { verifyToken } from './middleware/auth.js';
 import {
   createRoom, getRoom, joinRoom, leaveRoom, publicRoom, standings,
@@ -10,8 +10,26 @@ import {
 } from './lib/party.js';
 import * as Live from './lib/live.js';
 
+// Excluded on purpose: messages already push live over chat:message/chat:*
+// (a generic refresh would fight that and reset whichever tab someone has
+// open every time anyone sends a message); events is an append-only
+// analytics log nothing renders live; flashcardStates is private per-user
+// study progress with no shared view to keep in sync.
+const EXCLUDED_FROM_LIVE = new Set(['messages', 'events', 'flashcardStates']);
+const LIVE_COLLECTIONS = new Set(COLLECTIONS.filter(c => !EXCLUDED_FROM_LIVE.has(c)));
+
 export function attachRealtime(httpServer) {
   const io = new Server(httpServer, { cors: { origin: true, credentials: true } });
+
+  // Every connected socket already belongs to an authenticated user (the
+  // handshake below rejects anonymous connections), and this only carries
+  // collection names, never row data, so a plain broadcast is safe: clients
+  // decide what to do with it, and the REST API they refetch through still
+  // enforces every permission check exactly as before.
+  dbEvents.on('change', ({ collections }) => {
+    const relevant = collections.filter(c => LIVE_COLLECTIONS.has(c));
+    if (relevant.length) io.emit('data:change', { collections: relevant });
+  });
 
   io.use(async (socket, next) => {
     // A client can connect before the store has hydrated; wait rather than

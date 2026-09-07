@@ -197,7 +197,7 @@ router.add('/courses/:id/lessons/:lessonId', Learn.lessonView);
 router.add('/assignments/:id', Learn.assignmentGradeView);
 router.add('/children/:id', Learn.childReportView, { roles: ['parent', 'admin'] });
 
-router.add('/quiz/:id', Quiz.quizView);
+router.add('/quiz/:id', Quiz.quizView, { live: false });
 router.add('/quiz/:id/edit', Quiz.quizEditView, { roles: ['teacher', 'admin'] });
 router.add('/attempt/:id', Quiz.attemptView);
 router.add('/review', Quiz.reviewQueueView, { roles: ['teacher', 'admin'] });
@@ -207,7 +207,7 @@ router.add('/flashcards', Quiz.flashcardsView);
 router.add('/playground', Quiz.playgroundView);
 
 router.add('/party', Party.partyView);
-router.add('/party/:pin', Party.partyRoomView);
+router.add('/party/:pin', Party.partyRoomView, { live: false });
 
 router.add('/forum', Community.forumView);
 router.add('/forum/:id', Community.threadView);
@@ -232,8 +232,25 @@ document.addEventListener('dc:relang', () => chrome());
   if (store.user) {
     connectSocket();
     // Live nudges: badges, replies, party invites all arrive as notifications.
-    store.socket?.on('notify', () => { store.unread++; chrome(); router.resolve(); });
+    store.socket?.on('notify', () => { store.unread++; chrome(); router.resolve({ silent: true }); });
     store.socket?.on('party:kicked', () => { toast(t('party.notFound'), 'error'); router.go('/party'); });
+
+    // Whatever anyone else does anywhere in the app — publishes a quiz,
+    // grades an attempt, edits a course, joins a class — reaches every open
+    // tab this way: silently refetch and re-render whatever's currently on
+    // screen, so nothing ever needs a manual reload to stop being stale.
+    let refreshTimer = null;
+    store.socket?.on('data:change', () => {
+      clearTimeout(refreshTimer);
+      refreshTimer = setTimeout(() => {
+        const el = document.activeElement;
+        // Never yank a form out from under someone mid-edit — the next
+        // change event (or their own save, which already re-renders) picks
+        // it up instead.
+        if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)) return;
+        router.resolve({ silent: true });
+      }, 400);
+    });
   }
 
   if (!store.user && !['/login', '/register'].includes(location.pathname)) router.go('/login', true);

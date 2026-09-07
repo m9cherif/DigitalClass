@@ -16,9 +16,33 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import { EventEmitter } from 'node:events';
 import { fileURLToPath } from 'node:url';
 import * as supa from './supabase.js';
 import * as sql from './mysql.js';
+
+/**
+ * Fires once per tick with every collection touched since the last flush —
+ * a bulk operation (seed, wipe-all) mutates dozens of rows synchronously,
+ * and batching keeps that from firing dozens of separate socket broadcasts.
+ * realtime.js relays this to every connected client so open views can
+ * silently refetch instead of going stale until someone reloads.
+ */
+export const dbEvents = new EventEmitter();
+dbEvents.setMaxListeners(50);
+const pendingChanges = new Set();
+let changesScheduled = false;
+function noteChange(collection) {
+  pendingChanges.add(collection);
+  if (changesScheduled) return;
+  changesScheduled = true;
+  setImmediate(() => {
+    const collections = [...pendingChanges];
+    pendingChanges.clear();
+    changesScheduled = false;
+    dbEvents.emit('change', { collections });
+  });
+}
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const DATA_DIR = path.join(ROOT, 'data');
@@ -161,6 +185,7 @@ export function table(name) {
       const row = { id: doc.id ?? id(), createdAt: now(), updatedAt: now(), ...doc };
       rows.push(row);
       persist({ collection: name, type: 'upsert', rows: [row] });
+      noteChange(name);
       return row;
     },
     insertMany(docs) { return docs.map(d => this.insert(d)); },
@@ -171,6 +196,7 @@ export function table(name) {
       if (i === -1) return null;
       rows[i] = { ...rows[i], ...patch, id: rows[i].id, updatedAt: now() };
       persist({ collection: name, type: 'upsert', rows: [rows[i]] });
+      noteChange(name);
       return rows[i];
     },
     updateWhere(where, patch) {
@@ -185,6 +211,7 @@ export function table(name) {
       if (i === -1) return false;
       rows.splice(i, 1);
       persist({ collection: name, type: 'delete', id: rowId });
+      noteChange(name);
       return true;
     },
     removeWhere(where) {

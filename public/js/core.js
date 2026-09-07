@@ -199,32 +199,54 @@ export const router = {
     this.resolve();
   },
 
-  async resolve() {
+  /** `silent: true` re-fetches and re-renders the current route in place —
+   *  used for background live-data refreshes — without the loading flash,
+   *  the scroll-to-top, or replacing a working view with an error screen
+   *  over a transient refetch failure. */
+  async resolve({ silent = false } = {}) {
     const path = location.pathname;
     const outlet = document.getElementById('outlet');
     for (const r of routes) {
       const m = path.match(r.rx);
       if (!m) continue;
+      // Screens that run their own dedicated realtime loop (a timed quiz
+      // attempt's countdown, a live party room's socket handlers) opt out
+      // with `live: false` — re-invoking them on an unrelated background
+      // change would stack duplicate timers/listeners on top of the ones
+      // they already manage themselves.
+      if (silent && (r.auth === false || !store.user || r.live === false)) return;
       if (r.auth !== false && !store.user) return this.go('/login', true);
       if (r.roles && !r.roles.includes(store.user?.role)) return this.go('/', true);
       const params = Object.fromEntries(r.keys.map((k, i) => [k, decodeURIComponent(m[i + 1])]));
-      outlet.innerHTML = '<div class="stack"><div class="skeleton"></div><div class="skeleton"></div></div>';
+      const scrollY = window.scrollY;
+      // Views built around a .tab switcher (admin console, class/course
+      // detail) always land back on their first tab when re-rendered — fine
+      // for a real navigation, but a silent background refresh shouldn't
+      // ever visibly move someone off whatever tab they were reading.
+      const activeTab = silent ? outlet.querySelector('.tab.active') : null;
+      const activeTabData = activeTab && Object.entries(activeTab.dataset)[0];
+      if (!silent) outlet.innerHTML = '<div class="stack"><div class="skeleton"></div><div class="skeleton"></div></div>';
       try {
         await r.handler(params, outlet);
+        if (activeTabData) {
+          const [key, value] = activeTabData;
+          outlet.querySelector(`.tab[data-${key}="${value}"]`)?.click();
+        }
       } catch (err) {
+        if (silent) return; // keep showing the last good render rather than an error over one flaky refetch
         console.error(err);
         outlet.innerHTML = `<div class="empty-state"><span class="ic">⚠️</span>${
           err.status === 403 ? '403 — ' + t('common.error') : t('common.error')}<div class="small mt">${esc(err.message || '')}</div></div>`;
       }
-      window.scrollTo(0, 0);
+      window.scrollTo(0, silent ? scrollY : 0);
       document.querySelectorAll('.side-link, .tabbar-link').forEach(a => {
         const href = a.getAttribute('href');
         a.classList.toggle('active', href === path || (href !== '/' && path.startsWith(href)));
       });
-      document.querySelector('.sidebar')?.classList.remove('open');
+      if (!silent) document.querySelector('.sidebar')?.classList.remove('open');
       return;
     }
-    outlet.innerHTML = `<div class="empty-state"><span class="ic">🧭</span>404</div>`;
+    if (!silent) outlet.innerHTML = `<div class="empty-state"><span class="ic">🧭</span>404</div>`;
   }
 };
 
