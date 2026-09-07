@@ -147,6 +147,18 @@ export const session = {
     return api.post('/auth/resend-otp', { userId });
   },
 
+  /** Returns { needsRole, name, email } on a first-ever Google sign-in
+   *  (nothing created yet — call again with `role` to finish), or logs
+   *  straight in and returns the user otherwise. */
+  async google(credential, role) {
+    const r = await api.post('/auth/google', { credential, role });
+    if (r.needsRole) return r;
+    api.setToken(r.token);
+    await this.refresh();
+    connectSocket();
+    return r.user;
+  },
+
   logout() {
     api.setToken(null);
     store.user = null;

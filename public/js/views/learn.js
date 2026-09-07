@@ -9,9 +9,24 @@ const desc = c => i18n.pick(c, 'description', c.description);
 
 /* ------------------------------------------------------------------ auth */
 
+/** Polls for the Google Identity Services script (loaded via a plain
+ *  <script> tag in index.html) to finish loading, since module code can run
+ *  before it does. */
+function waitForGoogleSdk(timeoutMs = 5000) {
+  return new Promise(resolve => {
+    const start = Date.now();
+    (function poll() {
+      if (window.google?.accounts?.id) return resolve(window.google);
+      if (Date.now() - start > timeoutMs) return resolve(null);
+      setTimeout(poll, 100);
+    })();
+  });
+}
+
 export function authView(mode) {
   return async (_p, out) => {
     const isLogin = mode === 'login';
+    const { googleClientId } = await api.get('/config').catch(() => ({ googleClientId: null }));
     out.innerHTML = `
       <div style="max-inline-size:430px;margin-inline:auto;padding-block:6vh">
         <div class="center mb">
@@ -73,9 +88,62 @@ export function authView(mode) {
       };
     };
 
+    /** First-ever Google sign-in: the account can't be created until we know
+     *  which role it should have. */
+    const renderGoogleRole = ({ credential, name, email }) => {
+      card.innerHTML = `
+        <h2>${t('auth.chooseRole')}</h2>
+        <p class="small muted">${esc(name || email)}</p>
+        <div class="stack" id="roleList">
+          ${['student', 'teacher', 'parent'].map(r =>
+            `<button class="btn btn-block" data-role="${r}">${t('auth.role.' + r)}</button>`).join('')}
+        </div>
+        <div id="roleErr" class="small mt" style="color:var(--danger)"></div>`;
+
+      out.querySelectorAll('[data-role]').forEach(b => b.onclick = async () => {
+        const err = out.querySelector('#roleErr');
+        err.textContent = '';
+        try {
+          await session.google(credential, b.dataset.role);
+          document.dispatchEvent(new CustomEvent('dc:auth'));
+          router.go('/');
+        } catch (ex) {
+          err.textContent = t('auth.' + (ex.body?.error || 'bad_credentials'));
+        }
+      });
+    };
+
+    const onGoogleCredential = async ({ credential }) => {
+      const err = out.querySelector('#authErr');
+      try {
+        const r = await session.google(credential);
+        if (r?.needsRole) return renderGoogleRole({ credential, name: r.name, email: r.email });
+        document.dispatchEvent(new CustomEvent('dc:auth'));
+        router.go('/');
+      } catch {
+        if (err) err.textContent = t('auth.google_auth_failed');
+      }
+    };
+
+    const mountGoogleButton = async () => {
+      if (!googleClientId) return;
+      const container = out.querySelector('#googleBtn');
+      if (!container) return;
+      const google = await waitForGoogleSdk();
+      if (!google) return;
+      google.accounts.id.initialize({ client_id: googleClientId, callback: onGoogleCredential });
+      google.accounts.id.renderButton(container, {
+        theme: document.documentElement.dataset.theme === 'light' ? 'outline' : 'filled_black',
+        size: 'large', width: 360, locale: i18n.lang
+      });
+    };
+
     const renderForm = () => {
       card.innerHTML = `
         <h2>${t(isLogin ? 'auth.login' : 'auth.register')}</h2>
+        ${googleClientId ? `
+          <div id="googleBtn" class="center mb"></div>
+          <div class="center tiny muted mb">${t('auth.or')}</div>` : ''}
         <form id="authForm">
           ${isLogin ? '' : `
             <div class="field"><label>${t('auth.name')}</label><input name="name" required></div>
@@ -95,6 +163,8 @@ export function authView(mode) {
           ${t(isLogin ? 'auth.noAccount' : 'auth.haveAccount')}
           <a href="${isLogin ? '/register' : '/login'}">${t(isLogin ? 'auth.register' : 'auth.login')}</a>
         </div>`;
+
+      mountGoogleButton();
 
       out.querySelector('#authForm').onsubmit = async e => {
         e.preventDefault();

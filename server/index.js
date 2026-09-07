@@ -34,7 +34,7 @@ setInterval(() => {
 }, WINDOW).unref();
 
 app.use('/api', (req, res, next) => {
-  const login = ['/auth/login', '/auth/register', '/auth/verify-email', '/auth/resend-otp']
+  const login = ['/auth/login', '/auth/register', '/auth/verify-email', '/auth/resend-otp', '/auth/google']
     .some(p => req.path.startsWith(p));
   const key = `${req.ip}:${login ? 'auth' : 'api'}`;
   const limit = login ? 20 : 600;
@@ -71,6 +71,12 @@ app.use('/api/quizzes', quizRoutes);
 app.use('/api/attempts', attemptRoutes);
 app.use('/api/social', socialRoutes);
 app.use('/api', adminRoutes);
+
+/** Feature flags/IDs the client needs before it can render anything that
+ *  depends on them — a client ID is meant to be public, unlike an API key. */
+app.get('/api/config', (_req, res) => {
+  res.json({ googleClientId: process.env.GOOGLE_CLIENT_ID || null });
+});
 
 /** Public enough for an uptime probe; row counts are for admins only. */
 app.get('/api/health', (req, res) => {

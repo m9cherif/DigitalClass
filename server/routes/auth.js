@@ -3,6 +3,7 @@ import crypto from 'node:crypto';
 import { db, now } from '../lib/db.js';
 import { progress } from '../lib/gamification.js';
 import { sendMail } from '../lib/mail.js';
+import { verifyGoogleIdToken } from '../lib/googleAuth.js';
 import {
   ROLES, hashPassword, checkPassword, signToken, publicUser, requireAuth, requireRole
 } from '../middleware/auth.js';
@@ -72,6 +73,50 @@ router.post('/login', (req, res) => {
   }
   db.users.update(user.id, { lastLoginAt: new Date().toISOString() });
   res.json({ token: signToken(user), user: publicUser(user) });
+});
+
+/**
+ * Google already verified this person owns the email, so no password and
+ * no OTP: an existing account (matched by email) logs straight in. A first
+ * time sign-in has no role to put on the account yet — it comes back with
+ * needsRole so the client can ask once, then resend the same credential
+ * together with the chosen role to actually create the account.
+ */
+router.post('/google', async (req, res) => {
+  const { credential, role } = req.body || {};
+  if (!credential) return res.status(400).json({ error: 'invalid_verification' });
+
+  let payload;
+  try {
+    payload = await verifyGoogleIdToken(credential);
+  } catch (err) {
+    return res.status(err.status || 400).json({ error: err.code || 'google_auth_failed' });
+  }
+  if (!payload.email || payload.email_verified !== true) {
+    return res.status(400).json({ error: 'google_email_unverified' });
+  }
+  const email = payload.email.toLowerCase();
+
+  const existing = db.users.findOne({ email });
+  if (existing) {
+    if (existing.status === 'suspended') return res.status(403).json({ error: 'account_suspended' });
+    const updated = db.users.update(existing.id, { lastLoginAt: now(), googleId: payload.sub });
+    return res.json({ token: signToken(updated), user: publicUser(updated) });
+  }
+
+  if (!role) return res.json({ needsRole: true, name: payload.name, email });
+  if (!ROLES.includes(role)) return res.status(400).json({ error: 'invalid_role' });
+  if (role === 'admin' && db.users.count({ role: 'admin' }) > 0) {
+    return res.status(400).json({ error: 'invalid_role' });
+  }
+
+  const user = db.users.insert({
+    name: String(payload.name || email.split('@')[0]).slice(0, 80),
+    email, role, lang: 'fr', status: 'active', emailVerified: true, googleId: payload.sub,
+    avatar: payload.picture || null, bio: '', xp: 0, level: 1, streak: 0, longestStreak: 0,
+    childIds: [], theme: 'dark'
+  });
+  res.status(201).json({ token: signToken(user), user: publicUser(user) });
 });
 
 /** Completes registration: the OTP just emailed is the only thing standing
