@@ -155,11 +155,11 @@ export function authView(mode) {
       });
     };
 
-    const onOAuthCredential = async (provider, credential, extra) => {
+    const onOAuthCredential = async (provider, credential) => {
       const err = out.querySelector('#authErr');
       try {
-        const r = await session[provider](credential, undefined, extra);
-        if (r?.needsRole) return renderOAuthRole(provider, { credential: r.pendingId || credential, name: r.name, email: r.email });
+        const r = await session[provider](credential);
+        if (r?.needsRole) return renderOAuthRole(provider, { credential, name: r.name, email: r.email });
         document.dispatchEvent(new CustomEvent('dc:auth'));
         router.go('/');
       } catch (ex) {
@@ -222,21 +222,19 @@ export function authView(mode) {
         try {
           const FB = await getFbSdk(facebookAppId);
           if (!FB) return console.warn('[auth] Facebook SDK never loaded — the Facebook button is inert');
-          // Facebook requires the redirect_uri used when exchanging the code
-          // server-side to exactly match the one implied by this dialog —
-          // leaving it unset makes Facebook default to a value we can't
-          // reproduce, so it's pinned to the page origin on both ends.
-          const redirectUri = window.location.origin + '/';
-          const code = await new Promise((resolve, reject) => {
+          // Deliberately not forcing response_type: 'code' — that requires
+          // a server-side redirect_uri matching one the JS SDK's popup flow
+          // sets internally and never exposes, which made every exchange
+          // fail. The default response already includes a per-user access
+          // token, which is all the server needs (it re-verifies this via
+          // Facebook's debug_token before trusting it).
+          const accessToken = await new Promise((resolve, reject) => {
             FB.login(response => {
-              if (response.authResponse?.code) resolve(response.authResponse.code);
+              if (response.authResponse?.accessToken) resolve(response.authResponse.accessToken);
               else reject(new Error('cancelled'));
-            }, {
-              config_id: facebookConfigId, response_type: 'code',
-              override_default_response_type: true, redirect_uri: redirectUri
-            });
+            }, { config_id: facebookConfigId });
           });
-          await onOAuthCredential('facebook', code, { redirectUri });
+          await onOAuthCredential('facebook', accessToken);
         } catch (ex) {
           if (ex.message === 'cancelled') return;
           if (err) err.textContent = t('auth.facebook_auth_failed');

@@ -1,37 +1,39 @@
 /**
- * Facebook Login for Business (a "configuration") using the OAuth code
- * flow: the client gets a short-lived `code` from FB.login, and this
- * exchanges it server-side for an access token — the one step that
- * actually needs the app secret, so it can never happen in the browser.
+ * Facebook sign-in using the access token FB.login() already hands back in
+ * the browser — no code-exchange round trip, so there's no redirect_uri to
+ * get wrong (the JS SDK's popup flow uses an internal one of its own that
+ * can't reliably be reproduced server-side, which is what kept breaking the
+ * earlier code-exchange approach). The app secret is still only ever used
+ * server-side, to confirm via debug_token that the token really was issued
+ * to this app before trusting the profile it points to.
  */
 const GRAPH = 'https://graph.facebook.com/v20.0';
 
 export const facebookSignInConfigured = () => Boolean(process.env.FACEBOOK_APP_ID && process.env.FACEBOOK_APP_SECRET);
 
 /** Returns { id, name, email? } from Facebook's Graph API, or throws with a
- *  `status` an Express error handler can use directly. `redirectUri` must be
- *  byte-for-byte the same string the client passed into FB.login — Facebook
- *  rejects the exchange otherwise ("Error validating verification code..."),
- *  even though this flow never actually redirects anywhere. */
-export async function exchangeFacebookCode(code, redirectUri) {
+ *  `status` an Express error handler can use directly. */
+export async function verifyFacebookAccessToken(accessToken) {
   const appId = process.env.FACEBOOK_APP_ID;
   const appSecret = process.env.FACEBOOK_APP_SECRET;
   if (!appId || !appSecret) {
     throw Object.assign(new Error('Facebook sign-in is not configured'), { status: 503, code: 'facebook_not_configured' });
   }
-  if (!redirectUri) {
-    throw Object.assign(new Error('Missing redirect_uri'), { status: 400, code: 'facebook_auth_failed' });
+
+  // Without this, anyone who obtained a valid Facebook access token for
+  // ANY app (not just ours) could hand it to us and have it accepted —
+  // debug_token confirms Facebook itself issued this exact token to our
+  // app_id before we trust the profile it unlocks.
+  const debugUrl = `${GRAPH}/debug_token?input_token=${encodeURIComponent(accessToken)}` +
+    `&access_token=${encodeURIComponent(appId)}|${encodeURIComponent(appSecret)}`;
+  const debugRes = await fetch(debugUrl);
+  const debugJson = await debugRes.json().catch(() => null);
+  const info = debugJson?.data;
+  if (!debugRes.ok || !info?.is_valid || String(info.app_id) !== String(appId)) {
+    throw Object.assign(new Error(debugJson?.error?.message || 'Invalid Facebook access token'), { status: 400, code: 'facebook_auth_failed' });
   }
 
-  const tokenUrl = `${GRAPH}/oauth/access_token?client_id=${encodeURIComponent(appId)}` +
-    `&client_secret=${encodeURIComponent(appSecret)}&redirect_uri=${encodeURIComponent(redirectUri)}&code=${encodeURIComponent(code)}`;
-  const tokenRes = await fetch(tokenUrl);
-  const tokenJson = await tokenRes.json().catch(() => null);
-  if (!tokenRes.ok || !tokenJson?.access_token) {
-    throw Object.assign(new Error(tokenJson?.error?.message || 'Facebook token exchange failed'), { status: 400, code: 'facebook_auth_failed' });
-  }
-
-  const meRes = await fetch(`${GRAPH}/me?fields=id,name,email&access_token=${encodeURIComponent(tokenJson.access_token)}`);
+  const meRes = await fetch(`${GRAPH}/me?fields=id,name,email&access_token=${encodeURIComponent(accessToken)}`);
   const me = await meRes.json().catch(() => null);
   if (!meRes.ok || !me?.id) {
     throw Object.assign(new Error(me?.error?.message || 'Failed to load the Facebook profile'), { status: 400, code: 'facebook_auth_failed' });

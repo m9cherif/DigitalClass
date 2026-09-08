@@ -170,18 +170,10 @@ export const session = {
   },
 
   /** Same handshake again, against /auth/facebook — `credential` here is
-   *  the short-lived code from FB.login, not an ID token, so it can only
-   *  ever be exchanged once. A first call that comes back needsRole hands
-   *  back a `pending:<id>` token (prefixed so this can tell it apart from
-   *  a raw code) referencing the already-verified profile server-side —
-   *  the role-selection call resends that instead of the spent code. */
-  async facebook(credential, role, { redirectUri } = {}) {
-    const pending = credential.startsWith('pending:');
-    const body = pending
-      ? { pendingId: credential.slice('pending:'.length), role }
-      : { code: credential, redirectUri, role };
-    const r = await api.post('/auth/facebook', body);
-    if (r.needsRole) return { ...r, pendingId: r.pendingId ? `pending:${r.pendingId}` : undefined };
+   *  the access token FB.login() already returned in the browser. */
+  async facebook(credential, role) {
+    const r = await api.post('/auth/facebook', { accessToken: credential, role });
+    if (r.needsRole) return r;
     api.setToken(r.token);
     await this.refresh();
     connectSocket();
