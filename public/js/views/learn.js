@@ -602,22 +602,84 @@ function mountChat(courseId, host) {
   host.querySelector('#chatInput').onkeydown = e => { if (e.key === 'Enter') send(); };
 }
 
+const fmtBytes = n => {
+  if (!n) return '';
+  const units = ['B', 'KB', 'MB', 'GB'];
+  let v = n, i = 0;
+  while (v >= 1024 && i < units.length - 1) { v /= 1024; i++; }
+  return `${i > 0 ? v.toFixed(1) : Math.round(v)} ${units[i]}`;
+};
+const attIcon = name => {
+  const ext = (name.split('.').pop() || '').toLowerCase();
+  if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'].includes(ext)) return '🖼️';
+  if (ext === 'pdf') return '📄';
+  if (ext === 'zip') return '🗜️';
+  if (['js', 'py', 'c', 'cpp', 'java', 'sql', 'json'].includes(ext)) return '💻';
+  return '📎';
+};
+
+/** Renders into `host` and keeps `onChange` fed the current file list —
+ *  upload happens immediately (matching how a lesson's video/image
+ *  uploads already work elsewhere), so what's shown is always what an
+ *  eventual save will actually send. */
+function attachmentsEditor(host, initial, onChange) {
+  const files = [...(initial || [])];
+  const draw = () => {
+    host.innerHTML = `
+      <div class="stack">${files.map((f, i) => `
+        <div class="row between" style="align-items:center">
+          <a href="${esc(f.url)}" target="_blank" rel="noopener">${attIcon(f.name)} ${esc(f.name)}</a>
+          <span class="row" style="align-items:center">
+            <span class="tiny muted">${fmtBytes(f.size)}</span>
+            <button type="button" class="btn btn-sm btn-danger" data-remove-att="${i}" title="${t('lesson.removeAttachment')}">✕</button>
+          </span>
+        </div>`).join('') || `<div class="muted small">${t('lesson.noAttachments')}</div>`}</div>
+      <button type="button" class="btn btn-sm mt" data-add-att>⬆ ${t('lesson.addAttachment')}</button>
+      <input type="file" data-file-input hidden>`;
+    host.querySelectorAll('[data-remove-att]').forEach(b => b.onclick = () => {
+      files.splice(Number(b.dataset.removeAtt), 1);
+      onChange(files);
+      draw();
+    });
+    host.querySelector('[data-add-att]').onclick = () => host.querySelector('[data-file-input]').click();
+    host.querySelector('[data-file-input]').onchange = async e => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      try {
+        const r = await api.upload(file);
+        files.push({ name: r.name, url: r.url, size: r.size });
+        onChange(files);
+        draw();
+      } catch (err) {
+        toast(err.body?.error === 'rejected_file_type_or_size' ? t('build.imageRejected') : t('common.error'), 'error');
+      }
+    };
+  };
+  draw();
+}
+
 function lessonModal(courseId) {
+  let attachments = [];
   modal(`
     <h2>${t('course.lessons')}</h2>
     <div class="field"><label>Title</label><input id="ti"></div>
     <div class="field"><label>Markdown</label><textarea id="bo" class="code-editor"></textarea></div>
     <div class="row"><div class="field"><label>${t('common.minutes')}</label><input id="du" type="number" value="15" style="inline-size:100px"></div>
       <label class="row small"><input type="checkbox" id="pv" style="inline-size:auto"> preview</label></div>
+    <div class="field"><label>${t('lesson.attachments')}</label><div id="attHost"></div></div>
     <button class="btn btn-primary" id="sv">${t('common.save')}</button>`,
-    { onMount: (root, close) => root.querySelector('#sv').onclick = async () => {
-        await api.post(`/courses/${courseId}/lessons`, {
-          title: root.querySelector('#ti').value,
-          body: root.querySelector('#bo').value,
-          durationMin: Number(root.querySelector('#du').value),
-          preview: root.querySelector('#pv').checked
-        });
-        close(); router.resolve();
+    { onMount: (root, close) => {
+        attachmentsEditor(root.querySelector('#attHost'), [], list => { attachments = list; });
+        root.querySelector('#sv').onclick = async () => {
+          await api.post(`/courses/${courseId}/lessons`, {
+            title: root.querySelector('#ti').value,
+            body: root.querySelector('#bo').value,
+            durationMin: Number(root.querySelector('#du').value),
+            preview: root.querySelector('#pv').checked,
+            attachments
+          });
+          close(); router.resolve();
+        };
       } });
 }
 
@@ -705,6 +767,15 @@ export async function lessonView({ classId, id, lessonId }, out) {
     </div>
     ${lesson.videoUrl ? `<video controls src="${esc(lesson.videoUrl)}" style="inline-size:100%;border-radius:var(--radius)"></video>` : ''}
     <div class="card">${markdown(i18n.pick(lesson, 'body', lesson.body))}</div>
+    ${lesson.attachments?.length ? `
+      <div class="card mt">
+        <h3 class="small">📎 ${t('lesson.attachments')}</h3>
+        <div class="stack">${lesson.attachments.map(f => `
+          <a class="row between" style="padding:.3rem 0" href="${esc(f.url)}" target="_blank" rel="noopener">
+            <span>${attIcon(f.name)} ${esc(f.name)}</span>
+            <span class="tiny muted">${fmtBytes(f.size)}</span>
+          </a>`).join('')}</div>
+      </div>` : ''}
     <div class="between mt">
       ${idx > 0 ? `<a class="btn" href="/classes/${cid}/courses/${id}/lessons/${c.lessons[idx - 1].id}">← ${t('common.previous')}</a>` : '<span></span>'}
       ${c.enrolled ? `<button class="btn ${isDone ? 'btn-success' : 'btn-primary'}" id="done" ${isDone ? 'disabled' : ''}>
