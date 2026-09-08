@@ -132,7 +132,7 @@ router.post('/microsoft', async (req, res) => {
   try {
     payload = await verifyMicrosoftIdToken(credential);
   } catch (err) {
-    return res.status(err.status || 400).json({ error: err.code || 'microsoft_auth_failed' });
+    return res.status(err.status || 400).json({ error: err.code || 'microsoft_auth_failed', detail: err.message });
   }
   const rawEmail = payload.email || payload.preferred_username || '';
   if (!EMAIL_RE.test(rawEmail)) {
@@ -174,7 +174,7 @@ router.post('/facebook', async (req, res) => {
   try {
     profile = await exchangeFacebookCode(code);
   } catch (err) {
-    return res.status(err.status || 400).json({ error: err.code || 'facebook_auth_failed' });
+    return res.status(err.status || 400).json({ error: err.code || 'facebook_auth_failed', detail: err.message });
   }
   if (!profile.email || !EMAIL_RE.test(profile.email)) {
     return res.status(400).json({ error: 'facebook_email_unverified' });

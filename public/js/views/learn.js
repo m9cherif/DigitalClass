@@ -164,7 +164,10 @@ export function authView(mode) {
         router.go('/');
       } catch (ex) {
         console.error(`[auth] ${provider} sign-in failed`, ex);
-        if (err) err.textContent = t('auth.' + (ex.body?.error || provider + '_auth_failed'));
+        if (err) {
+          err.textContent = t('auth.' + (ex.body?.error || provider + '_auth_failed'));
+          if (ex.body?.detail) err.textContent += ` (${ex.body.detail})`;
+        }
       }
     };
 
