@@ -4,6 +4,7 @@ import {
   barChart, percentColor, fmtDuration
 } from '../core.js';
 import * as Q from '../questions.js';
+import { mountCodeEditor } from '../codeEditor.js';
 
 /* ------------------------------------------------------------ quiz intro */
 
@@ -524,10 +525,22 @@ function questionEditor(quizId, types, existing, done, groups) {
   const paint = () => {
     fields.innerHTML = dataFields(typeSel.value);
     wireImageAuthoring(typeSel.value);
+    wireCodeAuthoring(typeSel.value);
   };
   typeSel.onchange = paint;
 
   /* -------------------------------------------------- click-driven editors */
+
+  // Real syntax highlighting for the fields a teacher actually writes code
+  // into, the same upgrade the player side gets for answering one.
+  function wireCodeAuthoring(type) {
+    const mount = (id, language) => {
+      const box = fields.querySelector(id);
+      if (box) mountCodeEditor(box, { language });
+    };
+    if (type === 'code_output' || type === 'bug_find') mount('#d_code', 'javascript');
+    if (type === 'code_write' || type === 'code_fix') { mount('#d_starter', 'javascript'); mount('#d_tests', 'json'); }
+  }
 
   function wireImageAuthoring(type) {
     // Simple image slots (hotspot / label background).

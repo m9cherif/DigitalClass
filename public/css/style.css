@@ -241,6 +241,18 @@ pre {
   direction: ltr; text-align: start; tab-size: 2; white-space: pre; overflow-wrap: normal; overflow-x: auto;
 }
 
+/* CodeMirror replaces a .code-editor textarea in place — same footprint,
+   real syntax highlighting. Falls back to the plain textarea above if the
+   CDN script never loads, so nothing here is load-bearing. */
+.CodeMirror {
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  font-family: var(--mono); font-size: .88rem; line-height: 1.6;
+  height: auto; min-block-size: 90px; direction: ltr; text-align: start;
+}
+.CodeMirror-scroll { min-height: 90px; }
+.CodeMirror.cm-readonly { opacity: .92; }
+.CodeMirror.cm-readonly .CodeMirror-cursor { display: none; }
+
 /* --------------------------------------------------------------- quizzes */
 
 .q-card { border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-3); padding: 1.2rem; }
@@ -705,6 +717,6 @@ pre {
 /* Arabic reads right-to-left, but code and PINs must stay left-to-right. */
 html[dir="rtl"] pre, html[dir="rtl"] .code-editor, html[dir="rtl"] .cloze,
 html[dir="rtl"] .pin-display, html[dir="rtl"] .pin-input, html[dir="rtl"] .code-line,
-html[dir="rtl"] .code-input, html[dir="rtl"] .code-value { direction: ltr; text-align: center; }
-html[dir="rtl"] pre, html[dir="rtl"] .code-editor, html[dir="rtl"] .code-line { text-align: start; }
+html[dir="rtl"] .code-input, html[dir="rtl"] .code-value, html[dir="rtl"] .CodeMirror { direction: ltr; text-align: center; }
+html[dir="rtl"] pre, html[dir="rtl"] .code-editor, html[dir="rtl"] .code-line, html[dir="rtl"] .CodeMirror { text-align: start; }
 html[dir="rtl"] .spark { flex-direction: row-reverse; }

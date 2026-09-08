@@ -5,6 +5,7 @@
  * Read-only review rendering lives in renderReview().
  */
 import { t, esc, i18n, api, toast } from './core.js';
+import { mountCodeEditor } from './codeEditor.js';
 
 const LETTERS = 'ABCDEFGHIJ';
 const prompt = q => i18n.pick(q, 'prompt', q.prompt);
@@ -73,7 +74,8 @@ export function render(q, value) {
     case 'sql_query':
     case 'terminal':
       return `
-        ${d.schema ? `<pre class="small">${esc(d.schema)}</pre>` : ''}
+        ${d.schema ? `<textarea data-code-display data-lang="${q.type === 'sql_query' ? 'sql' : 'plain'}"
+               class="code-editor" readonly dir="ltr">${esc(d.schema)}</textarea>` : ''}
         <input data-input class="${q.type === 'short_answer' ? '' : 'mono'}"
                placeholder="${esc(d.placeholder || t('q.typeAnswer'))}" value="${esc(value ?? '')}"
                ${q.type !== 'short_answer' ? 'dir="ltr"' : ''}>`;
@@ -223,7 +225,7 @@ export function render(q, value) {
 
     case 'code_output':
       return `
-        <pre>${esc(d.code || '')}</pre>
+        <textarea data-code-display data-lang="javascript" class="code-editor" readonly dir="ltr">${esc(d.code || '')}</textarea>
         <label class="mt">${t('quiz.output')}</label>
         <textarea data-input class="code-editor" style="min-block-size:90px" dir="ltr"
                   placeholder="${t('q.typeAnswer')}">${esc(value ?? '')}</textarea>`;
@@ -314,6 +316,13 @@ export function render(q, value) {
 export function bind(el, q, value, onSet) {
   const d = q.data || {};
   const $$ = sel => [...el.querySelectorAll(sel)];
+
+  // Read-only code shown alongside a question (the snippet in code_output,
+  // the schema in sql_query) gets the same real editor treatment as one a
+  // person actually types into — every type renders it the same way via
+  // the data-code-display/data-lang markers, so this one line covers all of them.
+  $$('[data-code-display]').forEach(box =>
+    mountCodeEditor(box, { language: box.dataset.lang || 'plain', readOnly: true }));
 
   switch (q.type) {
     case 'mcq_single':
@@ -567,8 +576,9 @@ export function bind(el, q, value, onSet) {
     case 'code_write':
     case 'code_fix': {
       const editor = el.querySelector('[data-input]');
+      // Kept as a fallback for the rare case CodeMirror never loads — once it
+      // does, typing happens in its own surface and these never fire again.
       editor.oninput = e => onSet(e.target.value);
-      // Tab inserts two spaces instead of leaving the editor.
       editor.onkeydown = e => {
         if (e.key !== 'Tab') return;
         e.preventDefault();
@@ -577,6 +587,7 @@ export function bind(el, q, value, onSet) {
         editor.selectionStart = editor.selectionEnd = s + 2;
         onSet(editor.value);
       };
+      mountCodeEditor(editor, { language: 'javascript', onChange: onSet });
       el.querySelector('[data-run]').onclick = async ev => {
         const out = el.querySelector('[data-runout]');
         ev.target.disabled = true;
