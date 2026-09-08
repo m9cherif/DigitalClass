@@ -178,7 +178,10 @@ router.post('/facebook', async (req, res) => {
     return res.status(err.status || 400).json({ error: err.code || 'facebook_auth_failed', detail: err.message });
   }
   if (!profile.email || !EMAIL_RE.test(profile.email)) {
-    return res.status(400).json({ error: 'facebook_email_unverified' });
+    return res.status(400).json({
+      error: 'facebook_email_unverified',
+      detail: `granted scopes: ${profile.grantedScopes?.join(', ') || 'none'}`
+    });
   }
   const email = profile.email.toLowerCase();
 

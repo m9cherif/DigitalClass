@@ -38,5 +38,8 @@ export async function verifyFacebookAccessToken(accessToken) {
   if (!meRes.ok || !me?.id) {
     throw Object.assign(new Error(me?.error?.message || 'Failed to load the Facebook profile'), { status: 400, code: 'facebook_auth_failed' });
   }
-  return me;
+  // debug_token's scope list says which permissions this token actually
+  // carries — surfaced so a missing email can be told apart from "the
+  // account has none" vs. "email permission wasn't granted this login".
+  return { ...me, grantedScopes: info.scopes || [] };
 }
