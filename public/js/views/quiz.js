@@ -1,6 +1,6 @@
 /* Views: quiz player, quiz builder, review queue, analytics, flashcards, playground. */
 import {
-  api, store, session, router, t, i18n, esc, toast, modal, avatar,
+  api, store, session, router, t, i18n, esc, toast, modal, confirmDialog, promptDialog, avatar,
   barChart, percentColor, fmtDuration
 } from '../core.js';
 import * as Q from '../questions.js';
@@ -153,7 +153,7 @@ function runPlayer({ attempt, questions }, quiz, out) {
   ticker = setInterval(tick, 1000);
 
   async function finish(auto = false) {
-    if (!auto && !confirm(t('quiz.submit') + ' ?')) return;
+    if (!auto && !await confirmDialog(t('quiz.submit') + ' ?')) return;
     clearInterval(ticker);
     clearTimeout(saveTimer);
     const r = await api.post(`/attempts/${attempt.id}/submit`, { responses });
@@ -270,7 +270,7 @@ export async function quizEditView({ id }, out) {
     out.querySelectorAll('[data-edit]').forEach(b => b.onclick = () =>
       questionEditor(id, types, d.questions.find(q => q.id === b.dataset.edit), draw, groups));
     out.querySelectorAll('[data-del]').forEach(b => b.onclick = async () => {
-      if (!confirm(t('common.delete') + ' ?')) return;
+      if (!await confirmDialog(t('common.delete') + ' ?', { danger: true })) return;
       await api.del(`/quizzes/questions/${b.dataset.del}`);
       draw();
     });
@@ -346,8 +346,8 @@ function imageSlot(host, value, onChange) {
       const picked = await pickImage();
       if (picked) { draw(picked); onChange(picked); }
     };
-    host.querySelector('[data-url]').onclick = () => {
-      const entered = window.prompt(t('build.useUrl'), url || 'https://');
+    host.querySelector('[data-url]').onclick = async () => {
+      const entered = await promptDialog(t('build.useUrl'), { defaultValue: url || 'https://' });
       if (entered) { draw(entered.trim()); onChange(entered.trim()); }
     };
     host.querySelector('[data-clear]')?.addEventListener('click', () => { draw(''); onChange(''); });

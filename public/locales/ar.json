@@ -54,6 +54,7 @@
   "auth.facebook_email_unverified": "لا يحتوي حساب Facebook هذا على بريد إلكتروني قابل للاستخدام.",
   "auth.facebook_not_configured": "تسجيل الدخول عبر Facebook غير متاح حاليًا.",
   "common.save": "حفظ",
+  "common.confirm": "تأكيد",
   "common.cancel": "إلغاء",
   "common.delete": "حذف",
   "common.edit": "تعديل",

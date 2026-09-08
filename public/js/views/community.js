@@ -1,6 +1,6 @@
 /* Views: forum, leaderboard, messages, profile, certificates, admin. */
 import {
-  api, store, session, router, t, i18n, esc, toast, modal, avatar,
+  api, store, session, router, t, i18n, esc, toast, modal, confirmDialog, avatar,
   markdown, applyTheme, barChart, LANGS
 } from '../core.js';
 
@@ -473,7 +473,7 @@ export async function adminView(_p, out) {
       const btn = out.querySelector('#wipeBtn');
       input.oninput = () => { btn.disabled = input.value !== 'DELETE'; };
       btn.onclick = async () => {
-        if (!confirm(t('admin.wipeAllHint'))) return;
+        if (!await confirmDialog(t('admin.wipeAllHint'), { danger: true })) return;
         const r = await api.post('/wipe-all', {});
         api.setToken(r.token);
         await session.refresh();

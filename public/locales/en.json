@@ -54,6 +54,7 @@
   "auth.facebook_email_unverified": "That Facebook account has no usable email address.",
   "auth.facebook_not_configured": "Facebook sign-in isn't available right now.",
   "common.save": "Save",
+  "common.confirm": "Confirm",
   "common.cancel": "Cancel",
   "common.delete": "Delete",
   "common.edit": "Edit",

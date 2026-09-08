@@ -1,6 +1,6 @@
 /* Views: login/register, dashboards, course catalogue, course page, lessons. */
 import {
-  api, store, session, router, t, i18n, esc, toast, modal, avatar, markdown,
+  api, store, session, router, t, i18n, esc, toast, modal, confirmDialog, avatar, markdown,
   barChart, sparkline, percentColor, LANGS, connectSocket
 } from '../core.js';
 
@@ -569,7 +569,7 @@ export async function courseView({ classId, id }, out) {
           close(); router.resolve();
         };
         root.querySelector('#del').onclick = async () => {
-          if (!confirm(t('course.confirmDelete'))) return;
+          if (!await confirmDialog(t('course.confirmDelete'), { danger: true })) return;
           await api.del(`/courses/${id}`);
           close();
           router.go(`/classes/${cid}`);

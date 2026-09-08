@@ -2,7 +2,7 @@
  * to every course inside a class, including ones added to it later — courses
  * on their own no longer carry a code. */
 import {
-  api, store, router, t, i18n, esc, toast, modal, avatar, percentColor, LANGS
+  api, store, router, t, i18n, esc, toast, modal, confirmDialog, avatar, percentColor, LANGS
 } from '../core.js';
 
 /* --------------------------------------------------------------------- list */
@@ -181,7 +181,7 @@ export async function classDetailView({ id }, out) {
           close(); router.resolve();
         };
         root.querySelector('#del').onclick = async () => {
-          if (!confirm(t('classes.confirmDelete'))) return;
+          if (!await confirmDialog(t('classes.confirmDelete'), { danger: true })) return;
           await api.del(`/classes/${id}`);
           close();
           router.go('/classes');
@@ -258,7 +258,7 @@ export async function classDetailView({ id }, out) {
       </table></div>`;
 
     host.querySelectorAll('[data-remove]').forEach(b => b.onclick = async () => {
-      if (!confirm(t('classes.confirmRemoveStudent'))) return;
+      if (!await confirmDialog(t('classes.confirmRemoveStudent'), { danger: true })) return;
       await api.del(`/classes/${id}/members/${b.dataset.remove}`);
       toast('✅ ' + t('classes.studentRemoved'), 'success');
       loadRoster();

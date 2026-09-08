@@ -54,6 +54,7 @@
   "auth.facebook_email_unverified": "Ce compte Facebook n'a pas d'adresse e-mail utilisable.",
   "auth.facebook_not_configured": "La connexion Facebook n'est pas disponible pour le moment.",
   "common.save": "Enregistrer",
+  "common.confirm": "Confirmer",
   "common.cancel": "Annuler",
   "common.delete": "Supprimer",
   "common.edit": "Modifier",

@@ -299,16 +299,64 @@ export function toast(message, kind = '') {
   setTimeout(() => el.remove(), 4200);
 }
 
-export function modal(html, { onMount } = {}) {
+export function modal(html, { onMount, onClose } = {}) {
   const back = document.createElement('div');
   back.className = 'modal-backdrop';
   back.innerHTML = `<div class="modal">${html}</div>`;
+  const onKey = e => { if (e.key === 'Escape') close(); };
+  const close = () => { back.remove(); document.removeEventListener('keydown', onKey); onClose?.(); };
   back.addEventListener('click', e => { if (e.target === back) close(); });
-  const close = () => back.remove();
+  document.addEventListener('keydown', onKey);
   document.body.appendChild(back);
   back.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', close));
   onMount?.(back.querySelector('.modal'), close);
   return { close, root: back.querySelector('.modal') };
+}
+
+/**
+ * Styled stand-ins for window.confirm/prompt — an OS dialog box ignores the
+ * app's dark theme entirely (jarring on every platform, especially mobile)
+ * and blocks the whole page while open. Both resolve however the dialog
+ * closes — the primary button, Cancel, Escape, or a backdrop click all
+ * settle the promise exactly once, so a caller never hangs waiting.
+ */
+export function confirmDialog(message, { title, danger = false, confirmLabel, cancelLabel } = {}) {
+  return new Promise(resolve => {
+    let answered = false;
+    const settle = v => { if (answered) return; answered = true; resolve(v); };
+    const { close, root } = modal(`
+      ${title ? `<h2>${esc(title)}</h2>` : ''}
+      <p>${esc(message)}</p>
+      <div class="row mt" style="justify-content:flex-end">
+        <button class="btn" data-cancel>${esc(cancelLabel || t('common.cancel'))}</button>
+        <button class="btn ${danger ? 'btn-danger' : 'btn-primary'}" data-ok>${esc(confirmLabel || t('common.confirm'))}</button>
+      </div>`,
+      { onClose: () => settle(false) }
+    );
+    root.querySelector('[data-ok]').onclick = () => { settle(true); close(); };
+    root.querySelector('[data-cancel]').onclick = () => { settle(false); close(); };
+  });
+}
+
+export function promptDialog(message, { defaultValue = '', title, placeholder } = {}) {
+  return new Promise(resolve => {
+    let answered = false;
+    const settle = v => { if (answered) return; answered = true; resolve(v); };
+    const { close, root } = modal(`
+      ${title ? `<h2>${esc(title)}</h2>` : ''}
+      <p>${esc(message)}</p>
+      <div class="field"><input data-value value="${esc(defaultValue)}" placeholder="${esc(placeholder || '')}"></div>
+      <div class="row mt" style="justify-content:flex-end">
+        <button class="btn" data-cancel>${t('common.cancel')}</button>
+        <button class="btn btn-primary" data-ok>${t('common.confirm')}</button>
+      </div>`,
+      { onClose: () => settle(null), onMount: r => r.querySelector('[data-value]').focus() }
+    );
+    const submit = () => { const v = root.querySelector('[data-value]').value; settle(v); close(); };
+    root.querySelector('[data-ok]').onclick = submit;
+    root.querySelector('[data-value]').onkeydown = e => { if (e.key === 'Enter') submit(); };
+    root.querySelector('[data-cancel]').onclick = () => { settle(null); close(); };
+  });
 }
 
 export const initials = name => (name || '?').split(/\s+/).slice(0, 2).map(w => w[0]).join('').toUpperCase();
