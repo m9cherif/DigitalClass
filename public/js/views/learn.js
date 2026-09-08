@@ -208,7 +208,12 @@ export function authView(mode) {
           await onOAuthCredential('microsoft', result.idToken);
         } catch (ex) {
           if (ex?.errorCode === 'user_cancelled') return;
-          if (err) err.textContent = t('auth.microsoft_auth_failed');
+          console.error('[auth] microsoft loginPopup failed', ex);
+          if (err) {
+            err.textContent = t('auth.microsoft_auth_failed');
+            const detail = ex?.errorMessage || ex?.message;
+            if (detail) err.textContent += ` (${ex.errorCode || ''} ${detail})`;
+          }
         }
       };
     };
