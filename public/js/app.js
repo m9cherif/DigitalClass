@@ -187,11 +187,9 @@ router.add('/', (p, out) =>
 router.add('/classes', Classes.classHubView);
 router.add('/classes/new', Classes.classNewView, { roles: ['teacher', 'admin'] });
 router.add('/classes/:id', Classes.classDetailView);
-router.add('/courses', Learn.coursesView);
-router.add('/courses/new', Learn.courseNewView, { roles: ['teacher', 'admin'] });
-router.add('/courses/:id', Learn.courseView);
-router.add('/courses/:id/roster', Learn.rosterView, { roles: ['teacher', 'admin'] });
-router.add('/courses/:id/lessons/:lessonId', Learn.lessonView);
+router.add('/classes/:classId/courses/:id', Learn.courseView);
+router.add('/classes/:classId/courses/:id/roster', Learn.rosterView, { roles: ['teacher', 'admin'] });
+router.add('/classes/:classId/courses/:id/lessons/:lessonId', Learn.lessonView);
 router.add('/assignments/:id', Learn.assignmentGradeView);
 
 router.add('/quiz/:id', Quiz.quizView, { live: false });

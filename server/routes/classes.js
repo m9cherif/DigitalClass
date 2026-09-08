@@ -82,9 +82,14 @@ router.delete('/:id', requireAuth, (req, res) => {
   const cls = db.classes.byId(req.params.id);
   if (!cls) return res.status(404).json({ error: 'not_found' });
   if (!canEditClass(req.user, cls)) return res.status(403).json({ error: 'forbidden' });
-  // Courses are detached, not deleted — a teacher may want to keep the
-  // lessons/quizzes and fold them into a different class later.
-  db.courses.updateWhere({ classId: cls.id }, { classId: null });
+  // A course only ever exists inside a class now — there is no catalogue
+  // left to detach one into, so deleting the class takes its courses with
+  // it (same cleanup DELETE /courses/:id does, just for every member here).
+  for (const course of db.courses.find({ classId: cls.id })) {
+    db.lessons.removeWhere({ courseId: course.id });
+    db.enrollments.removeWhere({ courseId: course.id });
+    db.courses.remove(course.id);
+  }
   db.classEnrollments.removeWhere({ classId: cls.id });
   db.classes.remove(cls.id);
   res.json({ ok: true });

@@ -162,8 +162,9 @@ export function authView(mode) {
         if (r?.needsRole) return renderOAuthRole(provider, { credential, name: r.name, email: r.email });
         document.dispatchEvent(new CustomEvent('dc:auth'));
         router.go('/');
-      } catch {
-        if (err) err.textContent = t('auth.' + provider + '_auth_failed');
+      } catch (ex) {
+        console.error(`[auth] ${provider} sign-in failed`, ex);
+        if (err) err.textContent = t('auth.' + (ex.body?.error || provider + '_auth_failed'));
       }
     };
 
@@ -312,8 +313,7 @@ export async function dashboardView(_p, out) {
         <p class="muted">${isTeacher ? t('nav.dashboard') : `${t('dash.level')} ${store.progress?.level} · ${i18n.num(u.xp)} ${t('dash.xp')}`}</p>
       </div>
       ${isTeacher
-        ? `<div class="row"><a class="btn btn-primary" href="/courses/new">+ ${t('course.newCourse')}</a>
-             <a class="btn" href="/party">🎉 ${t('party.host')}</a></div>`
+        ? `<div class="row"><a class="btn" href="/party">🎉 ${t('party.host')}</a></div>`
         : `<a class="btn btn-primary" href="/party">🎉 ${t('nav.party')}</a>`}
     </div>
 
@@ -343,9 +343,9 @@ export async function dashboardView(_p, out) {
     <div class="grid grid-2">
       <div class="card">
         <div class="between mb"><h3>${isTeacher ? t('nav.courses') : t('dash.myCourses')}</h3>
-          <a class="small" href="/courses">${t('common.all')} →</a></div>
+          <a class="small" href="/classes">${t('common.all')} →</a></div>
         ${d.courses.length ? d.courses.map(c => `
-          <a href="/courses/${c.id}" class="row" style="padding:.55rem 0;color:inherit;border-block-end:1px solid var(--border)">
+          <a href="/classes/${c.classId}/courses/${c.id}" class="row" style="padding:.55rem 0;color:inherit;border-block-end:1px solid var(--border)">
             <span style="inline-size:9px;block-size:34px;border-radius:5px;background:${esc(c.color || 'var(--primary)')}"></span>
             <span style="flex:1">
               <div style="font-weight:600">${esc(c.title)}</div>
@@ -397,102 +397,16 @@ export async function dashboardView(_p, out) {
 
 /* --------------------------------------------------------------- courses */
 
-export async function coursesView(_p, out) {
-  const { courses } = await api.get('/courses');
-  const topics = [...new Set(courses.map(c => c.topic))];
-  const canCreate = ['teacher', 'admin'].includes(store.user.role);
-
-  out.innerHTML = `
-    <div class="between mb">
-      <h1>${t('course.catalogue')}</h1>
-      ${canCreate ? `<a class="btn btn-primary" href="/courses/new">+ ${t('course.newCourse')}</a>` : ''}
-    </div>
-
-    <div class="row mb filters">
-      <input id="q" placeholder="${t('common.search')}" class="search-input">
-      <div class="chips-scroll">
-        <button class="chip selected" data-topic="">${t('common.all')}</button>
-        ${topics.map(tp => `<button class="chip" data-topic="${tp}">${t('topic.' + tp)}</button>`).join('')}
-      </div>
-    </div>
-    <div id="list" class="grid grid-2"></div>`;
-
-  const list = out.querySelector('#list');
-  let filter = { q: '', topic: '' };
-
-  const draw = () => {
-    const rows = courses.filter(c =>
-      (!filter.topic || c.topic === filter.topic) &&
-      (!filter.q || (title(c) + desc(c) + c.tags.join()).toLowerCase().includes(filter.q)));
-    list.innerHTML = rows.length ? rows.map(c => `
-      <a class="card card-hover" href="/courses/${c.id}" style="color:inherit;border-top:3px solid ${esc(c.color)}">
-        <div class="between mb">
-          <span class="badge badge-primary">${t('topic.' + c.topic)}</span>
-          <span class="badge">${t('course.level.' + c.level)}</span>
-        </div>
-        <h3>${esc(title(c))}</h3>
-        <p class="small muted">${esc(desc(c)).slice(0, 130)}…</p>
-        <div class="row tiny muted">
-          <span>📚 ${c.lessonCount} ${t('course.lessons')}</span>
-          <span>❓ ${c.quizCount} ${t('course.quizzes')}</span>
-          <span>👥 ${c.studentCount} ${t('course.students')}</span>
-        </div>
-        <div class="between mt">
-          <span class="small">${t('course.by')} ${esc(c.teacher?.name || '')}</span>
-          ${c.enrolled ? `<span class="badge badge-success">${t('course.enrolled')}</span>` : ''}
-          ${c.status !== 'published' ? `<span class="badge badge-warning">${t('common.draft')}</span>` : ''}
-        </div>
-      </a>`).join('') : `<div class="empty-state"><span class="ic">📭</span>${t('common.empty')}</div>`;
-  };
-
-  out.querySelector('#q').oninput = e => { filter.q = e.target.value.toLowerCase(); draw(); };
-  out.querySelectorAll('[data-topic]').forEach(b => b.onclick = () => {
-    out.querySelectorAll('[data-topic]').forEach(x => x.classList.remove('selected'));
-    b.classList.add('selected');
-    filter.topic = b.dataset.topic;
-    draw();
-  });
-  draw();
-}
-
-export async function courseNewView(_p, out) {
-  out.innerHTML = `
-    <h1>${t('course.newCourse')}</h1>
-    <form class="card" id="f" style="max-inline-size:640px">
-      <div class="field"><label>${t('common.create')}</label><input name="title" required></div>
-      <div class="field"><label>${t('course.catalogue')}</label><textarea name="description"></textarea></div>
-      <div class="row">
-        <div class="field" style="flex:1"><label>Topic</label>
-          <select name="topic">${['algorithms', 'web', 'networks', 'databases', 'programming', 'security', 'hardware', 'ai']
-            .map(x => `<option value="${x}">${t('topic.' + x)}</option>`).join('')}</select></div>
-        <div class="field" style="flex:1"><label>${t('quiz.difficulty')}</label>
-          <select name="level">${['beginner', 'intermediate', 'advanced']
-            .map(x => `<option value="${x}">${t('course.level.' + x)}</option>`).join('')}</select></div>
-        <div class="field" style="flex:1"><label>${t('profile.language')}</label>
-          <select name="lang">${Object.entries(LANGS).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select></div>
-      </div>
-      <div class="field"><label>Color</label><input name="color" type="color" value="#6366f1" style="inline-size:80px"></div>
-      <button class="btn btn-primary">${t('common.create')}</button>
-    </form>`;
-
-  out.querySelector('#f').onsubmit = async e => {
-    e.preventDefault();
-    const body = Object.fromEntries(new FormData(e.target));
-    const { course } = await api.post('/courses', { ...body, status: 'draft' });
-    toast(t('quiz.saved'), 'success');
-    router.go(`/courses/${course.id}`);
-  };
-}
-
-export async function courseView({ id }, out) {
+export async function courseView({ classId, id }, out) {
   const c = await api.get(`/courses/${id}`);
   const course = c.course;
+  const cid = course.class?.id || classId;
   const done = key => c.progress?.[key]?.done;
   const total = c.lessons.length || 1;
   const pct = Math.round((c.lessons.filter(l => done(l.id)).length / total) * 100);
 
   out.innerHTML = `
-    ${course.class ? `<a href="/classes/${course.class.id}" class="small">← ${esc(course.class.title)}</a>` : ''}
+    ${course.class ? `<a href="/classes/${cid}" class="small">← ${esc(course.class.title)}</a>` : ''}
     <div class="card ${course.class ? 'mt' : ''} mb" style="border-top:4px solid ${esc(course.color)}">
       <div class="between">
         <div>
@@ -512,7 +426,7 @@ export async function courseView({ id }, out) {
             : store.user.role === 'student'
               ? `<button class="btn btn-primary btn-lg" id="enroll">${t('course.enroll')}</button>` : ''}
           ${c.editable ? `
-            <a class="btn" href="/courses/${id}/roster">👥 ${t('course.roster')}</a>
+            <a class="btn" href="/classes/${cid}/courses/${id}/roster">👥 ${t('course.roster')}</a>
             <a class="btn" href="/gradebook/${id}">📊 ${t('gradebook.title')}</a>
             <button class="btn" id="edit">✏️ ${t('common.edit')}</button>` : ''}
         </div>
@@ -540,7 +454,7 @@ export async function courseView({ id }, out) {
           </span>
           ${l.locked
             ? `<span class="badge">🔒 ${t('course.locked')}</span>`
-            : `<a class="btn btn-sm" href="/courses/${id}/lessons/${l.id}">${t('common.start')}</a>`}
+            : `<a class="btn btn-sm" href="/classes/${cid}/courses/${id}/lessons/${l.id}">${t('common.start')}</a>`}
         </div>`).join('') || `<div class="empty-state">${t('common.empty')}</div>`}</div>`,
 
     quizzes: () => `
@@ -644,7 +558,7 @@ export async function courseView({ id }, out) {
           if (!confirm(t('course.confirmDelete'))) return;
           await api.del(`/courses/${id}`);
           close();
-          router.go(course.class ? `/classes/${course.class.id}` : '/courses');
+          router.go(`/classes/${cid}`);
         };
       } }));
 
@@ -757,8 +671,9 @@ function submitAssignment(assignmentId) {
       } });
 }
 
-export async function lessonView({ id, lessonId }, out) {
+export async function lessonView({ classId, id, lessonId }, out) {
   const c = await api.get(`/courses/${id}`);
+  const cid = c.course.class?.id || classId;
   const idx = c.lessons.findIndex(l => l.id === lessonId);
   const lesson = c.lessons[idx];
   if (!lesson || lesson.locked) {
@@ -768,7 +683,7 @@ export async function lessonView({ id, lessonId }, out) {
   const isDone = c.progress?.[lesson.id]?.done;
 
   out.innerHTML = `
-    <a href="/courses/${id}" class="small">← ${esc(title(c.course))}</a>
+    <a href="/classes/${cid}/courses/${id}" class="small">← ${esc(title(c.course))}</a>
     <h1 class="mt">${esc(i18n.pick(lesson, 'title', lesson.title))}</h1>
     <div class="row muted small mb">
       <span>${t('quiz.question')} ${idx + 1}/${c.lessons.length}</span>
@@ -777,10 +692,10 @@ export async function lessonView({ id, lessonId }, out) {
     ${lesson.videoUrl ? `<video controls src="${esc(lesson.videoUrl)}" style="inline-size:100%;border-radius:var(--radius)"></video>` : ''}
     <div class="card">${markdown(i18n.pick(lesson, 'body', lesson.body))}</div>
     <div class="between mt">
-      ${idx > 0 ? `<a class="btn" href="/courses/${id}/lessons/${c.lessons[idx - 1].id}">← ${t('common.previous')}</a>` : '<span></span>'}
+      ${idx > 0 ? `<a class="btn" href="/classes/${cid}/courses/${id}/lessons/${c.lessons[idx - 1].id}">← ${t('common.previous')}</a>` : '<span></span>'}
       ${c.enrolled ? `<button class="btn ${isDone ? 'btn-success' : 'btn-primary'}" id="done" ${isDone ? 'disabled' : ''}>
         ${isDone ? '✓ ' + t('course.done') : t('course.markDone')}</button>` : ''}
-      ${idx < c.lessons.length - 1 ? `<a class="btn" href="/courses/${id}/lessons/${c.lessons[idx + 1].id}">${t('common.next')} →</a>` : '<span></span>'}
+      ${idx < c.lessons.length - 1 ? `<a class="btn" href="/classes/${cid}/courses/${id}/lessons/${c.lessons[idx + 1].id}">${t('common.next')} →</a>` : '<span></span>'}
     </div>`;
 
   out.querySelector('#done')?.addEventListener('click', async () => {
@@ -810,7 +725,7 @@ export async function assignmentGradeView({ id }, out) {
     // A student who follows their own submission link sees a read-only recap.
     const s = data.mySubmission;
     out.innerHTML = `
-      <a href="/courses/${a.course.id}" class="small">← ${esc(a.course.title)}</a>
+      <a href="/classes/${a.course.classId}/courses/${a.course.id}" class="small">← ${esc(a.course.title)}</a>
       <h1 class="mt">${esc(a.title)}</h1>
       <p class="muted">${esc(a.brief || '')}</p>
       ${s ? `
@@ -830,7 +745,7 @@ export async function assignmentGradeView({ id }, out) {
 
   const rows = data.submissions;
   out.innerHTML = `
-    <a href="/courses/${a.course.id}" class="small">← ${esc(a.course.title)}</a>
+    <a href="/classes/${a.course.classId}/courses/${a.course.id}" class="small">← ${esc(a.course.title)}</a>
     <div class="between mt mb">
       <div>
         <h1>${esc(a.title)}</h1>
@@ -877,10 +792,10 @@ export async function assignmentGradeView({ id }, out) {
   });
 }
 
-export async function rosterView({ id }, out) {
+export async function rosterView({ classId, id }, out) {
   const { roster } = await api.get(`/courses/${id}/roster`);
   out.innerHTML = `
-    <a href="/courses/${id}" class="small">← ${t('common.back')}</a>
+    <a href="/classes/${classId}/courses/${id}" class="small">← ${t('common.back')}</a>
     <h1 class="mt">${t('course.roster')}</h1>
     <div class="card table-wrap"><table>
       <thead><tr><th>${t('lb.student')}</th><th>${t('course.progress')}</th>

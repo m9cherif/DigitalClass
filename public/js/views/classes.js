@@ -223,7 +223,7 @@ export async function classDetailView({ id }, out) {
     const grid = out.querySelector('#courseGrid');
     if (!grid) return;
     grid.innerHTML = courses.map(c => `
-      <a class="card card-hover" href="/courses/${c.id}" style="color:inherit;border-top:3px solid ${esc(c.color)}">
+      <a class="card card-hover" href="/classes/${id}/courses/${c.id}" style="color:inherit;border-top:3px solid ${esc(c.color)}">
         <div class="between mb">
           <span class="tag-label">${t('topic.' + c.topic)}</span>
           ${c.status !== 'published' ? `<span class="badge badge-warning">${t('common.draft')}</span>` : ''}

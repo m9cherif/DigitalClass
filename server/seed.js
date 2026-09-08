@@ -36,6 +36,21 @@ const students = [
   ['Mehdi Aouini', 'mehdi@digitalclass.dev', 'ar']
 ].map(([n, e, l]) => user(n, e, 'student', { lang: l, xp: Math.floor(Math.random() * 400) }));
 
+/* ------------------------------------------------------------------- classes */
+
+// Every course lives inside a class now, so the demo data needs classes to
+// put them in — one per teacher, since that's the container students
+// actually join (a single code grants every course inside it).
+const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+const newClassCode = () => Array.from({ length: 6 }, () => CODE_CHARS[Math.floor(Math.random() * CODE_CHARS.length)]).join('');
+const klass = (teacher, o) => db.classes.insert({
+  teacherId: teacher.id, coTeacherIds: [], status: 'published', code: newClassCode(), ...o
+});
+
+const clsAlgo = klass(tNadia, { title: 'Algorithmique et programmation', color: '#6366f1' });
+const clsNet = klass(tOmar, { title: 'الشبكات وأمن المعلومات', color: '#10b981' });
+const clsSarah = klass(tSarah, { title: 'Développement & données', color: '#0ea5e9' });
+
 /* ------------------------------------------------------------------ courses */
 
 const course = (teacher, o) => db.courses.insert({
@@ -44,6 +59,7 @@ const course = (teacher, o) => db.courses.insert({
 });
 
 const cAlgo = course(tNadia, {
+  classId: clsAlgo.id,
   title: 'Algorithmique et programmation',
   description: "Variables, conditions, boucles, fonctions, complexité et structures de données de base.",
   topic: 'algorithms', level: 'beginner', lang: 'fr', color: '#6366f1', estimatedHours: 24,
@@ -55,6 +71,7 @@ const cAlgo = course(tNadia, {
 });
 
 const cWeb = course(tSarah, {
+  classId: clsSarah.id,
   title: 'Web Development Foundations',
   description: 'HTML, CSS, JavaScript, the DOM, HTTP and how a browser actually renders a page.',
   topic: 'web', level: 'beginner', lang: 'en', color: '#0ea5e9', estimatedHours: 30,
@@ -66,6 +83,7 @@ const cWeb = course(tSarah, {
 });
 
 const cNet = course(tOmar, {
+  classId: clsNet.id,
   title: 'الشبكات وأمن المعلومات',
   description: 'نموذج OSI، TCP/IP، العناوين، التوجيه، التشفير وأساسيات الأمن السيبراني.',
   topic: 'networks', level: 'intermediate', lang: 'ar', color: '#10b981', estimatedHours: 26,
@@ -77,6 +95,7 @@ const cNet = course(tOmar, {
 });
 
 const cData = course(tSarah, {
+  classId: clsSarah.id,
   title: 'Bases de données et SQL',
   description: 'Modèle relationnel, clés, jointures, normalisation et requêtes SQL.',
   topic: 'databases', level: 'intermediate', lang: 'fr', color: '#f59e0b', estimatedHours: 20,
@@ -556,8 +575,16 @@ quiz(cData, {
 /* -------------------------------------------------- enrollments & activity */
 
 for (const s of students) {
+  const joinedClasses = new Set();
   for (const c of [cAlgo, cWeb, cNet, cData].slice(0, 2 + Math.floor(Math.random() * 3))) {
     db.enrollments.insert({ userId: s.id, courseId: c.id, status: 'active', progress: {}, completed: false });
+    // Direct enrollment already grants access on its own, but joining the
+    // class too is what a real student would have done — the roster and
+    // "join with a code" flow both read from class membership.
+    if (c.classId && !joinedClasses.has(c.classId)) {
+      joinedClasses.add(c.classId);
+      db.classEnrollments.insert({ userId: s.id, classId: c.classId, status: 'active', joinedAt: new Date().toISOString() });
+    }
   }
 }
 
@@ -596,5 +623,5 @@ console.log(`
     teacher  sarah@digitalclass.dev     (EN — web & SQL)
     student  yasmine@digitalclass.dev   (+ 5 more students)
 
-  ${db.courses.count()} courses · ${db.lessons.count()} lessons · ${db.quizzes.count()} quizzes · ${db.questions.count()} questions
+  ${db.classes.count()} classes · ${db.courses.count()} courses · ${db.lessons.count()} lessons · ${db.quizzes.count()} quizzes · ${db.questions.count()} questions
 `);

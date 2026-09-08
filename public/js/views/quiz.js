@@ -15,7 +15,7 @@ export async function quizView({ id }, out) {
   const canAnswer = store.user.role !== 'admin';
 
   out.innerHTML = `
-    <a href="/courses/${q.courseId}" class="small">← ${t('common.back')}</a>
+    <a href="/classes/${q.classId}/courses/${q.courseId}" class="small">← ${t('common.back')}</a>
     <div class="card mt">
       <div class="between">
         <div>
@@ -174,7 +174,7 @@ function showResult(r, quiz, out) {
         `<span class="badge badge-success">${b.icon} ${esc(b.id)}</span>`).join('')}</div>` : ''}
       ${r.gain?.leveledUp ? `<div class="badge badge-primary mt">⬆️ ${t('notif.level_up', { level: r.gain.level })}</div>` : ''}
       <div class="row mt" style="justify-content:center">
-        <a class="btn" href="/courses/${quiz.courseId}">${t('common.back')}</a>
+        <a class="btn" href="/classes/${quiz.classId}/courses/${quiz.courseId}">${t('common.back')}</a>
         <a class="btn btn-primary" href="/quiz/${quiz.id}">${t('quiz.start')}</a>
       </div>
     </div>
@@ -221,7 +221,7 @@ export async function quizEditView({ id }, out) {
     out.innerHTML = `
       <div class="between mb">
         <div>
-          <a href="/courses/${quiz.courseId}" class="small">← ${t('common.back')}</a>
+          <a href="/classes/${quiz.classId}/courses/${quiz.courseId}" class="small">← ${t('common.back')}</a>
           <h1>${esc(d.quiz.title)}</h1>
         </div>
         <div class="row">

@@ -96,23 +96,23 @@ router.get('/:id', (req, res) => {
 router.post('/', requireRole('teacher', 'admin'), (req, res) => {
   const b = req.body || {};
   if (!b.title) return res.status(400).json({ error: 'title_required' });
+  // Every course lives inside a class now — there is no standalone catalogue
+  // to find an orphan course in, and no page left that could even show one.
+  if (!b.classId) return res.status(400).json({ error: 'class_required' });
 
-  // A course may belong to a class; anyone who can edit that class can then
-  // edit this course too, so a co-teacher of the class is not locked out of
-  // course they didn't personally create.
-  let cls = null, coTeacherIds = [];
-  if (b.classId) {
-    cls = db.classes.byId(b.classId);
-    if (!cls || !canEditClass(req.user, cls)) return res.status(403).json({ error: 'forbidden' });
-    coTeacherIds = [...new Set([cls.teacherId, ...(cls.coTeacherIds || [])])].filter(x => x !== req.user.id);
-  }
+  // Anyone who can edit the class can then edit this course too, so a
+  // co-teacher of the class is not locked out of a course they didn't
+  // personally create.
+  const cls = db.classes.byId(b.classId);
+  if (!cls || !canEditClass(req.user, cls)) return res.status(403).json({ error: 'forbidden' });
+  const coTeacherIds = [...new Set([cls.teacherId, ...(cls.coTeacherIds || [])])].filter(x => x !== req.user.id);
 
   const course = db.courses.insert({
     title: b.title, description: b.description || '',
-    classId: cls?.id || null,
+    classId: cls.id,
     topic: b.topic || 'programming', level: b.level || 'beginner',
     lang: b.lang || 'fr', langs: b.langs || ['fr'],
-    tags: b.tags || [], cover: b.cover || null, color: b.color || cls?.color || '#6366f1',
+    tags: b.tags || [], cover: b.cover || null, color: b.color || cls.color || '#6366f1',
     teacherId: req.user.id, coTeacherIds, status: b.status || 'draft',
     estimatedHours: Number(b.estimatedHours) || 10
   });
@@ -309,7 +309,10 @@ router.get('/assignments/:id', requireAuth, (req, res) => {
     return res.status(403).json({ error: 'forbidden' });
   }
 
-  const payload = { assignment: { ...assignment, course: { id: course.id, title: course.title } }, editable };
+  const payload = {
+    assignment: { ...assignment, course: { id: course.id, title: course.title, classId: course.classId || null } },
+    editable
+  };
   if (editable) {
     const roster = db.enrollments.find({ courseId: course.id, status: 'active' });
     payload.submissions = roster.map(e => {

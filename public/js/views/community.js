@@ -329,7 +329,7 @@ export async function adminView(_p, out) {
         <h1>${t('admin.title')}</h1>
         <p class="muted small">${t('admin.notLearner')}</p>
       </div>
-      <a class="btn btn-primary" href="/courses/new">+ ${t('course.newCourse')}</a>
+      <a class="btn btn-primary" href="/classes">${t('classes.hub')}</a>
     </div>
 
     <div class="tabs">
@@ -401,7 +401,7 @@ export async function adminView(_p, out) {
         <h3>${t('nav.courses')}</h3>
         <div class="stack">
           ${courses.courses.map(c => `
-            <a class="between course-row" href="/courses/${c.id}">
+            <a class="between course-row" href="/classes/${c.classId}/courses/${c.id}">
               <span class="row">
                 <span class="dot-color" style="background:${esc(c.color || 'var(--primary)')}"></span>
                 <span><strong>${esc(c.title)}</strong>

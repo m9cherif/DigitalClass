@@ -28,6 +28,7 @@ router.get('/dashboard', requireAuth, (req, res) => {
         const total = Math.max(1, db.lessons.count({ courseId: e.courseId }));
         return course && {
           id: course.id, title: course.title, color: course.color, topic: course.topic,
+          classId: course.classId || null,
           percent: Math.round((Object.values(e.progress || {}).filter(p => p.done).length / total) * 100)
         };
       }).filter(Boolean),
@@ -53,7 +54,7 @@ router.get('/dashboard', requireAuth, (req, res) => {
   return res.json({
     role: u.role,
     courses: courses.map(c => ({
-      id: c.id, title: c.title, color: c.color, status: c.status,
+      id: c.id, title: c.title, color: c.color, status: c.status, classId: c.classId || null,
       students: db.enrollments.count({ courseId: c.id, status: 'active' }),
       quizzes: db.quizzes.count({ courseId: c.id }),
       lessons: db.lessons.count({ courseId: c.id })

@@ -84,7 +84,7 @@ router.get('/:id', requireAuth, (req, res) => {
 
   const questions = (quiz.questionIds || []).map(qid => db.questions.byId(qid)).filter(Boolean);
   res.json({
-    quiz, editable,
+    quiz: { ...quiz, classId: course?.classId || null }, editable,
     // Teachers get the answer keys; everyone else gets sanitised questions.
     questions: editable ? questions : questions.map(sanitize),
     attempts: db.attempts.find({ userId: req.user.id, quizId: quiz.id })
