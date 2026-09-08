@@ -9,19 +9,22 @@ const GRAPH = 'https://graph.facebook.com/v20.0';
 export const facebookSignInConfigured = () => Boolean(process.env.FACEBOOK_APP_ID && process.env.FACEBOOK_APP_SECRET);
 
 /** Returns { id, name, email? } from Facebook's Graph API, or throws with a
- *  `status` an Express error handler can use directly. */
-export async function exchangeFacebookCode(code) {
+ *  `status` an Express error handler can use directly. `redirectUri` must be
+ *  byte-for-byte the same string the client passed into FB.login — Facebook
+ *  rejects the exchange otherwise ("Error validating verification code..."),
+ *  even though this flow never actually redirects anywhere. */
+export async function exchangeFacebookCode(code, redirectUri) {
   const appId = process.env.FACEBOOK_APP_ID;
   const appSecret = process.env.FACEBOOK_APP_SECRET;
   if (!appId || !appSecret) {
     throw Object.assign(new Error('Facebook sign-in is not configured'), { status: 503, code: 'facebook_not_configured' });
   }
+  if (!redirectUri) {
+    throw Object.assign(new Error('Missing redirect_uri'), { status: 400, code: 'facebook_auth_failed' });
+  }
 
-  // redirect_uri is deliberately empty: this code came from the JS SDK's
-  // dialog flow (FB.login), not a server-side redirect, so there is no
-  // redirect URI to match against.
   const tokenUrl = `${GRAPH}/oauth/access_token?client_id=${encodeURIComponent(appId)}` +
-    `&client_secret=${encodeURIComponent(appSecret)}&redirect_uri=&code=${encodeURIComponent(code)}`;
+    `&client_secret=${encodeURIComponent(appSecret)}&redirect_uri=${encodeURIComponent(redirectUri)}&code=${encodeURIComponent(code)}`;
   const tokenRes = await fetch(tokenUrl);
   const tokenJson = await tokenRes.json().catch(() => null);
   if (!tokenRes.ok || !tokenJson?.access_token) {

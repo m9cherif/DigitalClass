@@ -162,19 +162,50 @@ router.post('/microsoft', async (req, res) => {
   res.status(201).json({ token: signToken(user), user: publicUser(user) });
 });
 
+/** Facebook's authorization code is single-use, but a first-ever sign-in
+ *  needs a second round trip once the person picks a role — so the
+ *  already-exchanged profile is held here briefly under a random id the
+ *  client resends instead of the (by then spent) code. */
+const fbPending = new Map();
+const FB_PENDING_TTL_MS = 5 * 60 * 1000;
+function stashFacebookProfile(profile) {
+  const id = crypto.randomUUID();
+  fbPending.set(id, { profile, expiresAt: Date.now() + FB_PENDING_TTL_MS });
+  return id;
+}
+function takeFacebookProfile(id) {
+  const entry = fbPending.get(id);
+  fbPending.delete(id);
+  if (!entry || entry.expiresAt < Date.now()) return null;
+  return entry.profile;
+}
+// A role picker someone abandons leaves a stashed profile with nothing to
+// ever read it back — sweep those out instead of leaking them forever.
+setInterval(() => {
+  const ts = Date.now();
+  for (const [id, entry] of fbPending) if (entry.expiresAt < ts) fbPending.delete(id);
+}, FB_PENDING_TTL_MS).unref();
+
 /** Same needsRole handshake as /google and /microsoft, fed by a Facebook
  *  Graph API profile instead of an ID token — Facebook's code flow needs a
  *  server-side exchange (the app secret), so the client only ever hands us
- *  the short-lived `code` from FB.login. */
+ *  the short-lived `code` from FB.login (or, on the role-selection
+ *  follow-up, the `pendingId` standing in for it — see stashFacebookProfile
+ *  above). */
 router.post('/facebook', async (req, res) => {
-  const { code, role } = req.body || {};
-  if (!code) return res.status(400).json({ error: 'invalid_verification' });
+  const { code, pendingId, redirectUri, role } = req.body || {};
+  if (!code && !pendingId) return res.status(400).json({ error: 'invalid_verification' });
 
   let profile;
-  try {
-    profile = await exchangeFacebookCode(code);
-  } catch (err) {
-    return res.status(err.status || 400).json({ error: err.code || 'facebook_auth_failed', detail: err.message });
+  if (pendingId) {
+    profile = takeFacebookProfile(String(pendingId));
+    if (!profile) return res.status(400).json({ error: 'facebook_auth_failed', detail: 'Sign-in expired, please try again' });
+  } else {
+    try {
+      profile = await exchangeFacebookCode(code, redirectUri);
+    } catch (err) {
+      return res.status(err.status || 400).json({ error: err.code || 'facebook_auth_failed', detail: err.message });
+    }
   }
   if (!profile.email || !EMAIL_RE.test(profile.email)) {
     return res.status(400).json({ error: 'facebook_email_unverified' });
@@ -188,7 +219,7 @@ router.post('/facebook', async (req, res) => {
     return res.json({ token: signToken(updated), user: publicUser(updated) });
   }
 
-  if (!role) return res.json({ needsRole: true, name: profile.name, email });
+  if (!role) return res.json({ needsRole: true, name: profile.name, email, pendingId: stashFacebookProfile(profile) });
   if (!ROLES.includes(role)) return res.status(400).json({ error: 'invalid_role' });
   if (role === 'admin' && db.users.count({ role: 'admin' }) > 0) {
     return res.status(400).json({ error: 'invalid_role' });
