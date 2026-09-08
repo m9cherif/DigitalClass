@@ -161,7 +161,11 @@ router.get('/parties/history', requireAuth, (req, res) => {
 
 /* --------------------------------------------------------------- uploads */
 
-const ALLOWED = /\.(png|jpe?g|gif|webp|svg|pdf|zip|txt|md|csv|json|js|py|c|cpp|java|sql)$/i;
+// Homework comes in whatever format a school actually uses — Word/Excel/
+// PowerPoint (old .doc/.xls/.ppt binary formats included, not just the
+// modern .docx/.xlsx/.pptx ones) and OpenDocument, alongside the original
+// image/code/archive types.
+const ALLOWED = /\.(png|jpe?g|gif|webp|svg|pdf|zip|rar|7z|txt|md|csv|json|js|py|c|cpp|java|sql|docx?|xlsx?|pptx?|odt|ods|odp)$/i;
 
 const upload = multer({
   storage: multer.diskStorage({

@@ -614,7 +614,10 @@ const attIcon = name => {
   const ext = (name.split('.').pop() || '').toLowerCase();
   if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'].includes(ext)) return '🖼️';
   if (ext === 'pdf') return '📄';
-  if (ext === 'zip') return '🗜️';
+  if (['zip', 'rar', '7z'].includes(ext)) return '🗜️';
+  if (['doc', 'docx', 'odt'].includes(ext)) return '📝';
+  if (['xls', 'xlsx', 'ods', 'csv'].includes(ext)) return '📊';
+  if (['ppt', 'pptx', 'odp'].includes(ext)) return '📽️';
   if (['js', 'py', 'c', 'cpp', 'java', 'sql', 'json'].includes(ext)) return '💻';
   return '📎';
 };
