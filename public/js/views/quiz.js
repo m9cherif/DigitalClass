@@ -14,7 +14,20 @@ import { mountCodeEditor } from '../codeEditor.js';
 const backHref = q => q.courseId ? `/classes/${q.classId}/courses/${q.courseId}` : '/party';
 
 export async function quizView({ id }, out) {
-  const data = await api.get(`/quizzes/${id}`);
+  let data;
+  try {
+    data = await api.get(`/quizzes/${id}`);
+  } catch (err) {
+    // The single most common reason a student hits this: the teacher
+    // shared the link before publishing it. Worth a specific, actionable
+    // message instead of the generic "forbidden" the router would show.
+    if (err.status === 403) {
+      out.innerHTML = `<div class="empty-state"><span class="ic">🔒</span>${t('quiz.notPublishedYet')}
+        <div class="mt"><a class="btn btn-sm" href="/party">← ${t('common.back')}</a></div></div>`;
+      return;
+    }
+    throw err;
+  }
   const q = data.quiz;
   const best = data.attempts.filter(a => a.percent != null);
   // Admins supervise, never answer questions.

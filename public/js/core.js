@@ -256,8 +256,14 @@ export const router = {
       } catch (err) {
         if (silent) return; // keep showing the last good render rather than an error over one flaky refetch
         console.error(err);
-        outlet.innerHTML = `<div class="empty-state"><span class="ic">⚠️</span>${
-          err.status === 403 ? '403 — ' + t('common.error') : t('common.error')}<div class="small mt">${esc(err.message || '')}</div></div>`;
+        // A raw API error code (e.g. "forbidden") is meaningless to whoever
+        // is looking at it — only show a translated detail line when one
+        // actually exists for this code, never the code itself.
+        const code = err.body?.error;
+        const known = code && i18n.dict[`err.${code}`];
+        const detail = known ? t(`err.${code}`) : '';
+        outlet.innerHTML = `<div class="empty-state"><span class="ic">⚠️</span>${t('common.error')}${
+          detail ? `<div class="small mt">${esc(detail)}</div>` : ''}</div>`;
       }
       window.scrollTo(0, silent ? scrollY : 0);
       document.querySelectorAll('.side-link, .tabbar-link').forEach(a => {
