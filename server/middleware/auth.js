@@ -65,6 +65,17 @@ export function canEditCourse(user, course) {
     (course.teacherId === user.id || (course.coTeacherIds || []).includes(user.id));
 }
 
+/** Teachers may only touch their own quiz; admins may touch any. A quiz
+ *  made straight from the party hub has no course at all — ownership then
+ *  falls back to whoever authored it, the same way a class-less course
+ *  never existed for one to inherit editing rights from. */
+export function canEditQuiz(user, quiz) {
+  if (!user || !quiz) return false;
+  if (user.role === 'admin') return true;
+  if (quiz.courseId) return canEditCourse(user, db.courses.byId(quiz.courseId));
+  return user.role === 'teacher' && quiz.authorId === user.id;
+}
+
 /**
  * A student has access to a course either through a direct per-course
  * enrolment (the original model, still used for courses that stand alone) or

@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { db } from '../lib/db.js';
 import { QUESTION_TYPES, TYPE_LIST, normaliseMedia, typesByGroup } from '../quiz/types.js';
 import { runJs } from '../quiz/sandbox.js';
-import { requireAuth, requireRole, canEditCourse } from '../middleware/auth.js';
+import { requireAuth, requireRole, canEditCourse, canEditQuiz } from '../middleware/auth.js';
 
 const router = Router();
 
@@ -61,10 +61,7 @@ router.get('/', requireAuth, (req, res) => {
     rows = rows.filter(q => courseIds.has(q.courseId));
   }
   if (kind) rows = rows.filter(q => q.kind === kind);
-  rows = rows.filter(q => {
-    const course = db.courses.byId(q.courseId);
-    return q.published || canEditCourse(req.user, course);
-  });
+  rows = rows.filter(q => q.published || canEditQuiz(req.user, q));
   res.json({
     quizzes: rows.map(q => ({
       ...q, questionIds: undefined,
@@ -79,7 +76,7 @@ router.get('/:id', requireAuth, (req, res) => {
   const quiz = db.quizzes.byId(req.params.id);
   if (!quiz) return res.status(404).json({ error: 'not_found' });
   const course = db.courses.byId(quiz.courseId);
-  const editable = canEditCourse(req.user, course);
+  const editable = canEditQuiz(req.user, quiz);
   if (!quiz.published && !editable) return res.status(403).json({ error: 'forbidden' });
 
   const questions = (quiz.questionIds || []).map(qid => db.questions.byId(qid)).filter(Boolean);
@@ -94,11 +91,16 @@ router.get('/:id', requireAuth, (req, res) => {
 
 router.post('/', requireRole('teacher', 'admin'), (req, res) => {
   const b = req.body || {};
-  const course = db.courses.byId(b.courseId);
-  if (!course) return res.status(400).json({ error: 'course_required' });
-  if (!canEditCourse(req.user, course)) return res.status(403).json({ error: 'forbidden' });
+  // A course is optional — a quiz meant only to host a live party doesn't
+  // need one, the same way a party itself can run in a class with none.
+  let course = null;
+  if (b.courseId) {
+    course = db.courses.byId(b.courseId);
+    if (!course) return res.status(400).json({ error: 'course_not_found' });
+    if (!canEditCourse(req.user, course)) return res.status(403).json({ error: 'forbidden' });
+  }
   const quiz = db.quizzes.insert({
-    courseId: course.id, title: b.title || 'New quiz', description: b.description || '',
+    courseId: course?.id || null, title: b.title || 'New quiz', description: b.description || '',
     kind: b.kind || 'practice',                 // practice | graded | exam | party | flashcards | survey
     difficulty: b.difficulty || 'medium',
     timeLimitSec: Number(b.timeLimitSec) || 0,  // 0 = untimed
@@ -115,7 +117,7 @@ router.post('/', requireRole('teacher', 'admin'), (req, res) => {
 router.patch('/:id', requireAuth, (req, res) => {
   const quiz = db.quizzes.byId(req.params.id);
   if (!quiz) return res.status(404).json({ error: 'not_found' });
-  if (!canEditCourse(req.user, db.courses.byId(quiz.courseId))) return res.status(403).json({ error: 'forbidden' });
+  if (!canEditQuiz(req.user, quiz)) return res.status(403).json({ error: 'forbidden' });
   const allowed = ['title', 'description', 'kind', 'difficulty', 'timeLimitSec', 'maxAttempts',
     'shuffleQuestions', 'showAnswersAfter', 'passPercent', 'published', 'questionIds', 'i18n'];
   const patch = Object.fromEntries(Object.entries(req.body || {}).filter(([k]) => allowed.includes(k)));
@@ -125,7 +127,7 @@ router.patch('/:id', requireAuth, (req, res) => {
 router.delete('/:id', requireAuth, (req, res) => {
   const quiz = db.quizzes.byId(req.params.id);
   if (!quiz) return res.status(404).json({ error: 'not_found' });
-  if (!canEditCourse(req.user, db.courses.byId(quiz.courseId))) return res.status(403).json({ error: 'forbidden' });
+  if (!canEditQuiz(req.user, quiz)) return res.status(403).json({ error: 'forbidden' });
   db.quizzes.remove(quiz.id);
   res.json({ ok: true });
 });
@@ -209,7 +211,7 @@ function validateQuestion(body) {
 router.post('/:id/questions', requireAuth, (req, res) => {
   const quiz = db.quizzes.byId(req.params.id);
   if (!quiz) return res.status(404).json({ error: 'not_found' });
-  if (!canEditCourse(req.user, db.courses.byId(quiz.courseId))) return res.status(403).json({ error: 'forbidden' });
+  if (!canEditQuiz(req.user, quiz)) return res.status(403).json({ error: 'forbidden' });
 
   const err = validateQuestion(req.body || {});
   if (err) return res.status(400).json({ error: err });
@@ -229,7 +231,7 @@ router.patch('/questions/:id', requireAuth, (req, res) => {
   const question = db.questions.byId(req.params.id);
   if (!question) return res.status(404).json({ error: 'not_found' });
   const quiz = db.quizzes.byId(question.quizId);
-  if (!canEditCourse(req.user, db.courses.byId(quiz?.courseId))) return res.status(403).json({ error: 'forbidden' });
+  if (!canEditQuiz(req.user, quiz)) return res.status(403).json({ error: 'forbidden' });
   const merged = { ...question, ...req.body };
   const err = validateQuestion(merged);
   if (err) return res.status(400).json({ error: err });
@@ -242,7 +244,7 @@ router.delete('/questions/:id', requireAuth, (req, res) => {
   const question = db.questions.byId(req.params.id);
   if (!question) return res.status(404).json({ error: 'not_found' });
   const quiz = db.quizzes.byId(question.quizId);
-  if (!canEditCourse(req.user, db.courses.byId(quiz?.courseId))) return res.status(403).json({ error: 'forbidden' });
+  if (!canEditQuiz(req.user, quiz)) return res.status(403).json({ error: 'forbidden' });
   db.quizzes.update(quiz.id, { questionIds: (quiz.questionIds || []).filter(i => i !== question.id) });
   db.questions.remove(question.id);
   res.json({ ok: true });
@@ -263,7 +265,7 @@ router.post('/:id/questions/clone/:questionId', requireAuth, (req, res) => {
   const quiz = db.quizzes.byId(req.params.id);
   const source = db.questions.byId(req.params.questionId);
   if (!quiz || !source) return res.status(404).json({ error: 'not_found' });
-  if (!canEditCourse(req.user, db.courses.byId(quiz.courseId))) return res.status(403).json({ error: 'forbidden' });
+  if (!canEditQuiz(req.user, quiz)) return res.status(403).json({ error: 'forbidden' });
   const { id: _drop, createdAt, updatedAt, ...rest } = source;
   const clone = db.questions.insert({ ...rest, quizId: quiz.id, courseId: quiz.courseId, clonedFrom: source.id });
   db.quizzes.update(quiz.id, { questionIds: [...(quiz.questionIds || []), clone.id] });
@@ -298,7 +300,7 @@ router.post('/import', requireRole('teacher', 'admin'), (req, res) => {
 router.get('/:id/export', requireAuth, (req, res) => {
   const quiz = db.quizzes.byId(req.params.id);
   if (!quiz) return res.status(404).json({ error: 'not_found' });
-  if (!canEditCourse(req.user, db.courses.byId(quiz.courseId))) return res.status(403).json({ error: 'forbidden' });
+  if (!canEditQuiz(req.user, quiz)) return res.status(403).json({ error: 'forbidden' });
   const questions = (quiz.questionIds || []).map(i => db.questions.byId(i)).filter(Boolean)
     .map(({ id, quizId, courseId, authorId, createdAt, updatedAt, ...q }) => q);
   res.setHeader('Content-Disposition', `attachment; filename="${quiz.id}.json"`);

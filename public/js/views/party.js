@@ -1,6 +1,7 @@
 /* Live quiz parties: host console, join flow, question round and podium. */
 import { api, store, router, t, i18n, esc, toast, connectSocket, avatar } from '../core.js';
 import * as Q from '../questions.js';
+import { quizModal } from './learn.js';
 
 /**
  * The party hub. With no classId this is the homepage hub: any published quiz,
@@ -54,7 +55,7 @@ export async function partyView({ classId } = {}, out) {
             </div>
             <button class="btn btn-primary btn-block" id="host">${t('party.host')}</button>`
             : `<div class="muted small mb">${t('party.noQuizzes')}</div>
-               <a class="btn btn-sm" href="/classes">+ ${t('course.newCourse')}</a>`}`
+               <button class="btn btn-sm" id="newQuiz">+ ${t('quiz.newQuiz')}</button>`}`
           : `<div class="muted small">${t('party.waiting')}</div>`}
       </div>
     </div>
@@ -79,6 +80,9 @@ export async function partyView({ classId } = {}, out) {
   };
   out.querySelector('#pin').onkeydown = e => { if (e.key === 'Enter') out.querySelector('#join').click(); };
   out.querySelectorAll('[data-pin]').forEach(b => b.onclick = () => router.go('/party/' + b.dataset.pin));
+  // No courseId at all — this quiz exists purely to host a party, so there's
+  // nothing to attach it to.
+  out.querySelector('#newQuiz')?.addEventListener('click', () => quizModal());
 
   out.querySelector('#host')?.addEventListener('click', () => {
     const sock = connectSocket();

@@ -7,6 +7,11 @@ import * as Q from '../questions.js';
 
 /* ------------------------------------------------------------ quiz intro */
 
+// A quiz created straight from the party hub has no course to link back
+// to — that's the point of it — so the back link falls back to the hub
+// it was most likely opened from instead.
+const backHref = q => q.courseId ? `/classes/${q.classId}/courses/${q.courseId}` : '/party';
+
 export async function quizView({ id }, out) {
   const data = await api.get(`/quizzes/${id}`);
   const q = data.quiz;
@@ -15,7 +20,7 @@ export async function quizView({ id }, out) {
   const canAnswer = store.user.role !== 'admin';
 
   out.innerHTML = `
-    <a href="/classes/${q.classId}/courses/${q.courseId}" class="small">← ${t('common.back')}</a>
+    <a href="${backHref(q)}" class="small">← ${t('common.back')}</a>
     <div class="card mt">
       <div class="between">
         <div>
@@ -174,7 +179,7 @@ function showResult(r, quiz, out) {
         `<span class="badge badge-success">${b.icon} ${esc(b.id)}</span>`).join('')}</div>` : ''}
       ${r.gain?.leveledUp ? `<div class="badge badge-primary mt">⬆️ ${t('notif.level_up', { level: r.gain.level })}</div>` : ''}
       <div class="row mt" style="justify-content:center">
-        <a class="btn" href="/classes/${quiz.classId}/courses/${quiz.courseId}">${t('common.back')}</a>
+        <a class="btn" href="${backHref(quiz)}">${t('common.back')}</a>
         <a class="btn btn-primary" href="/quiz/${quiz.id}">${t('quiz.start')}</a>
       </div>
     </div>
@@ -221,7 +226,7 @@ export async function quizEditView({ id }, out) {
     out.innerHTML = `
       <div class="between mb">
         <div>
-          <a href="/classes/${quiz.classId}/courses/${quiz.courseId}" class="small">← ${t('common.back')}</a>
+          <a href="${backHref(quiz)}" class="small">← ${t('common.back')}</a>
           <h1>${esc(d.quiz.title)}</h1>
         </div>
         <div class="row">

@@ -621,7 +621,7 @@ function lessonModal(courseId) {
       } });
 }
 
-function quizModal(courseId) {
+export function quizModal(courseId) {
   modal(`
     <h2>${t('quiz.newQuiz')}</h2>
     <div class="field"><label>Title</label><input id="ti"></div>
