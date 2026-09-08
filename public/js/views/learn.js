@@ -68,7 +68,7 @@ async function getFbSdk(appId) {
 export function authView(mode) {
   return async (_p, out) => {
     const isLogin = mode === 'login';
-    const { googleClientId, microsoftClientId, facebookAppId, facebookConfigId } = await fetchConfig();
+    const { googleClientId, microsoftClientId, facebookAppId } = await fetchConfig();
     out.innerHTML = `
       <div style="max-inline-size:430px;margin-inline:auto;padding-block:6vh">
         <div class="center mb">
@@ -214,7 +214,7 @@ export function authView(mode) {
     };
 
     const mountFacebookButton = () => {
-      if (!facebookAppId || !facebookConfigId) return;
+      if (!facebookAppId) return;
       const btn = out.querySelector('#fbBtn');
       if (!btn) return;
       btn.onclick = async () => {
@@ -222,17 +222,17 @@ export function authView(mode) {
         try {
           const FB = await getFbSdk(facebookAppId);
           if (!FB) return console.warn('[auth] Facebook SDK never loaded — the Facebook button is inert');
-          // Deliberately not forcing response_type: 'code' — that requires
-          // a server-side redirect_uri matching one the JS SDK's popup flow
-          // sets internally and never exposes, which made every exchange
-          // fail. The default response already includes a per-user access
-          // token, which is all the server needs (it re-verifies this via
-          // Facebook's debug_token before trusting it).
+          // Classic Facebook Login (no config_id): "Facebook Login for
+          // Business" configurations only ever offer business/asset
+          // permissions (Pages, ad accounts, WhatsApp Business...) — never
+          // plain email — since they're meant for granting a business app
+          // access to those assets, not for signing a person in. Asking for
+          // the scope directly is the right tool for that instead.
           const accessToken = await new Promise((resolve, reject) => {
             FB.login(response => {
               if (response.authResponse?.accessToken) resolve(response.authResponse.accessToken);
               else reject(new Error('cancelled'));
-            }, { config_id: facebookConfigId });
+            }, { scope: 'public_profile,email' });
           });
           await onOAuthCredential('facebook', accessToken);
         } catch (ex) {
@@ -251,12 +251,12 @@ export function authView(mode) {
             <svg width="18" height="18" viewBox="0 0 21 21"><rect width="10" height="10" x="1" y="1" fill="#f25022"/><rect width="10" height="10" x="11" y="1" fill="#7fba00"/><rect width="10" height="10" x="1" y="11" fill="#00a4ef"/><rect width="10" height="10" x="11" y="11" fill="#ffb900"/></svg>
             ${t('auth.continueWithMicrosoft')}
           </button>` : ''}
-        ${(facebookAppId && facebookConfigId) ? `
+        ${facebookAppId ? `
           <button type="button" class="btn btn-block mb" id="fbBtn">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="#1877F2"><path d="M24 12.07C24 5.4 18.63 0 12 0S0 5.4 0 12.07C0 18.1 4.39 23.09 10.13 24v-8.44H7.08v-3.49h3.05V9.41c0-3.02 1.79-4.7 4.53-4.7 1.31 0 2.68.24 2.68.24v2.97h-1.51c-1.49 0-1.95.93-1.95 1.89v2.26h3.32l-.53 3.49h-2.79V24C19.61 23.09 24 18.1 24 12.07"/></svg>
             ${t('auth.continueWithFacebook')}
           </button>` : ''}
-        ${(googleClientId || microsoftClientId || (facebookAppId && facebookConfigId)) ? `<div class="center tiny muted mb">${t('auth.or')}</div>` : ''}
+        ${(googleClientId || microsoftClientId || facebookAppId) ? `<div class="center tiny muted mb">${t('auth.or')}</div>` : ''}
         <form id="authForm">
           ${isLogin ? '' : `
             <div class="field"><label>${t('auth.name')}</label><input name="name" required></div>
