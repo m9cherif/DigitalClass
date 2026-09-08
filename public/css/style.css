@@ -283,14 +283,18 @@ pre {
   border: 1.5px dashed var(--border); border-radius: var(--radius-sm); padding: .7rem;
   min-block-size: 82px; background: var(--surface-2);
 }
-.bucket.over { border-color: var(--primary); background: var(--primary-soft); }
+.bucket.over { border-color: var(--primary); background: var(--primary-soft); transition: border-color .12s ease, background .12s ease; }
 .bucket h4 { font-size: .85rem; margin-block-end: .5rem; color: var(--muted); }
 
 .order-item {
   display: flex; align-items: center; gap: .6rem; padding: .55rem .75rem; margin-block-end: .4rem;
   background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-sm);
+  cursor: grab; transition: border-color .12s ease, background .12s ease, opacity .12s ease;
 }
 .order-item .idx { inline-size: 22px; color: var(--muted); font-weight: 700; font-size: .85rem; }
+.order-item .drag-handle { color: var(--muted); cursor: grab; }
+.order-item.dragging { opacity: .45; }
+.order-item.drag-over { border-color: var(--primary); background: var(--primary-soft); }
 
 .blank-input { inline-size: 130px; display: inline-block; padding: .2rem .45rem; margin: 0 .2rem; }
 .cloze { font-family: var(--mono); font-size: .9rem; line-height: 2.4; white-space: pre-wrap; direction: ltr; text-align: start; }
@@ -516,7 +520,23 @@ pre {
 
 .tt-cell { min-inline-size: 46px; font-family: var(--mono); font-weight: 700; }
 .tt-cell.answered { border-color: var(--primary); color: var(--primary); }
-.flash-face { background: var(--surface-2); }
+
+/* A real two-sided card instead of a plain show/hide toggle. */
+.flip-card { perspective: 1200px; cursor: pointer; margin-block-end: .5rem; }
+.flip-card:focus-visible .flip-inner { outline: 2px solid var(--primary); outline-offset: 2px; }
+.flip-inner {
+  position: relative; min-block-size: 140px; transition: transform .5s cubic-bezier(.4,.2,.2,1);
+  transform-style: preserve-3d;
+}
+.flip-card.flipped .flip-inner { transform: rotateY(180deg); }
+.flip-card-lg .flip-inner { min-block-size: 230px; }
+.flip-front, .flip-back {
+  position: absolute; inset: 0; backface-visibility: hidden; -webkit-backface-visibility: hidden;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center;
+  border: 1px solid var(--border); border-radius: var(--radius); padding: 1.2rem; background: var(--surface-2);
+}
+.flip-front .flip-icon { font-size: 2rem; margin-block-end: .4rem; }
+.flip-back { transform: rotateY(180deg); background: var(--primary-soft); font-weight: 620; font-size: 1.1rem; }
 
 /* --------------------------------------------------- question authoring */
 

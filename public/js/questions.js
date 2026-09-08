@@ -111,7 +111,8 @@ export function render(q, value) {
       return `
         <div class="muted small mb">${t('q.dragToOrder')}</div>
         <div data-order>${items.map((it, i) => `
-          <div class="order-item" data-item="${esc(it)}">
+          <div class="order-item" draggable="true" data-item="${esc(it)}">
+            <span class="drag-handle" aria-hidden="true">⠿</span>
             <span class="idx">${i + 1}</span>
             <span style="flex:1">${esc(it)}</span>
             <button class="btn btn-sm" data-up="${i}" ${i === 0 ? 'disabled' : ''}>↑</button>
@@ -286,12 +287,15 @@ export function render(q, value) {
         `).join('')}</div>`;
 
     case 'flashcard':
-      // The prompt is already shown by the player above this block, so the card
-      // only carries the hidden answer side.
+      // The prompt is already shown by the player above this block, so the
+      // front face doesn't repeat it — it's just an inviting "flip me", and
+      // flipping the whole card over (not a plain show/hide) is the answer.
       return `
-        <div class="card center flash-face">
-          <div data-back class="hidden">${esc(q.data.back || '')}</div>
-          <button type="button" class="btn" data-flip>${t('flash.showAnswer')}</button>
+        <div class="flip-card" data-flip tabindex="0" role="button" aria-label="${esc(t('flash.showAnswer'))}">
+          <div class="flip-inner">
+            <div class="flip-front"><span class="flip-icon">🎴</span><span class="muted small">${t('flash.showAnswer')}</span></div>
+            <div class="flip-back">${esc(q.data.back || '')}</div>
+          </div>
         </div>
         <div class="row mt" data-conf>
           ${[[0, 'flash.again'], [3, 'flash.hard'], [4, 'flash.good'], [5, 'flash.easy']].map(([c, k]) =>
@@ -380,16 +384,35 @@ export function bind(el, q, value, onSet) {
 
     case 'ordering': {
       let items = value?.length ? [...value] : [...(d.items || [])];
-      const swap = (i, j) => {
-        [items[i], items[j]] = [items[j], items[i]];
+      const rerender = () => {
         onSet(items);
         // Re-render into the same host we were bound to; reaching for
         // parentElement broke whenever the caller changed the wrapper.
         el.innerHTML = render({ ...q, data: { ...d, items } }, items);
         bind(el, q, items, onSet);
       };
+      const swap = (i, j) => { [items[i], items[j]] = [items[j], items[i]]; rerender(); };
       $$('[data-up]').forEach(b => b.onclick = () => swap(Number(b.dataset.up), Number(b.dataset.up) - 1));
       $$('[data-down]').forEach(b => b.onclick = () => swap(Number(b.dataset.down), Number(b.dataset.down) + 1));
+
+      // The label above promises "drag to order" — this is what makes that
+      // true, on top of the up/down buttons every device can still use.
+      let dragFrom = null;
+      $$('.order-item').forEach((row, i) => {
+        row.ondragstart = e => { dragFrom = i; e.dataTransfer.effectAllowed = 'move'; row.classList.add('dragging'); };
+        row.ondragend = () => row.classList.remove('dragging');
+        row.ondragover = e => { e.preventDefault(); row.classList.add('drag-over'); };
+        row.ondragleave = () => row.classList.remove('drag-over');
+        row.ondrop = e => {
+          e.preventDefault();
+          row.classList.remove('drag-over');
+          if (dragFrom === null || dragFrom === i) return;
+          const [moved] = items.splice(dragFrom, 1);
+          items.splice(i, 0, moved);
+          rerender();
+        };
+      });
+
       // The order on screen is already a candidate answer — record it so a
       // student who judges it correct and submits untouched is not marked blank.
       if (!value?.length) onSet([...items]);
@@ -561,10 +584,10 @@ export function bind(el, q, value, onSet) {
       break;
 
     case 'flashcard': {
-      el.querySelector('[data-flip]').onclick = e => {
-        el.querySelector('[data-back]').classList.remove('hidden');
-        e.target.classList.add('hidden');
-      };
+      const card = el.querySelector('[data-flip]');
+      const flip = () => card.classList.toggle('flipped');
+      card.onclick = flip;
+      card.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); flip(); } };
       $$('[data-c]').forEach(b => b.onclick = () => {
         $$('[data-c]').forEach(x => x.classList.remove('btn-primary'));
         b.classList.add('btn-primary');

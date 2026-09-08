@@ -375,10 +375,9 @@ function questionEditor(quizId, types, existing, done, groups) {
     const list = (arr, fallback) => (arr?.length ? arr : fallback).join('\n');
     switch (type) {
       case 'mcq_single': case 'mcq_multiple':
-        return `<div class="field"><label>Options (one per line)</label>
-            <textarea id="d_options">${esc(list(d.options, ['', '', '', '']))}</textarea></div>
-          <div class="field"><label>Correct index${type === 'mcq_multiple' ? 'es (comma separated)' : ''} — 0-based</label>
-            <input id="d_answer" value="${esc(Array.isArray(d.answer) ? d.answer.join(',') : (d.answer ?? 0))}"></div>`;
+        return `<div class="field"><label>${t('build.options')}</label>
+            <div id="d_optRows" class="stack"></div>
+            <button type="button" class="btn btn-sm mt" data-add-option>+ ${t('build.addOption')}</button></div>`;
       case 'true_false':
         return `<div class="field"><label>Answer</label><select id="d_answer">
           <option value="true" ${d.answer === true ? 'selected' : ''}>${t('q.true')}</option>
@@ -404,10 +403,9 @@ function questionEditor(quizId, types, existing, done, groups) {
         return `<div class="field"><label>Items in the CORRECT order (one per line)</label>
           <textarea id="d_answer">${esc(list(d.answer, ['']))}</textarea></div>`;
       case 'matching':
-        return `<div class="row"><div class="field" style="flex:1"><label>Left (one per line)</label>
-            <textarea id="d_left">${esc(list(d.left, ['']))}</textarea></div>
-          <div class="field" style="flex:1"><label>Right — same order = the pairing</label>
-            <textarea id="d_right">${esc(list(d.right, ['']))}</textarea></div></div>`;
+        return `<div class="field"><label>${t('build.matchPairs')}</label>
+            <div id="d_pairRows" class="stack"></div>
+            <button type="button" class="btn btn-sm mt" data-add-pair>+ ${t('build.addPair')}</button></div>`;
       case 'categorize':
         return `<div class="field"><label>Buckets (one per line)</label>
             <textarea id="d_buckets">${esc(list(d.buckets, ['']))}</textarea></div>
@@ -526,6 +524,8 @@ function questionEditor(quizId, types, existing, done, groups) {
     fields.innerHTML = dataFields(typeSel.value);
     wireImageAuthoring(typeSel.value);
     wireCodeAuthoring(typeSel.value);
+    wireMcqAuthoring(typeSel.value);
+    wireMatchingAuthoring(typeSel.value);
   };
   typeSel.onchange = paint;
 
@@ -540,6 +540,77 @@ function questionEditor(quizId, types, existing, done, groups) {
     };
     if (type === 'code_output' || type === 'bug_find') mount('#d_code', 'javascript');
     if (type === 'code_write' || type === 'code_fix') { mount('#d_starter', 'javascript'); mount('#d_tests', 'json'); }
+  }
+
+  // Row-based option editing (text + a one-click "mark correct" toggle)
+  // instead of two separately-maintained "one per line" / "0-based index"
+  // fields a typo could silently desync.
+  function wireMcqAuthoring(type) {
+    if (type !== 'mcq_single' && type !== 'mcq_multiple') return;
+    const seeded = q.type === type;
+    D.options = seeded && Array.isArray(q.data?.options) && q.data.options.length ? [...q.data.options] : ['', '', '', ''];
+    D.answer = seeded ? q.data?.answer ?? (type === 'mcq_multiple' ? [] : 0) : (type === 'mcq_multiple' ? [] : 0);
+
+    const draw = () => {
+      const host = fields.querySelector('#d_optRows');
+      if (!host) return;
+      const multi = type === 'mcq_multiple';
+      const answers = new Set((Array.isArray(D.answer) ? D.answer : [D.answer]).map(Number));
+      host.innerHTML = D.options.map((opt, i) => `
+        <div class="row mb" style="align-items:center">
+          <button type="button" class="btn btn-sm ${answers.has(i) ? 'btn-success' : ''}" data-opt-correct="${i}">
+            ${answers.has(i) ? '✓' : t('build.markCorrect')}</button>
+          <input style="flex:1" placeholder="${t('build.optionPlaceholder')} ${i + 1}" value="${esc(opt)}" data-opt-text="${i}">
+          <button type="button" class="btn btn-sm btn-danger" data-opt-del="${i}" ${D.options.length <= 2 ? 'disabled' : ''}>✕</button>
+        </div>`).join('');
+      host.querySelectorAll('[data-opt-text]').forEach(inp => inp.oninput = () => { D.options[Number(inp.dataset.optText)] = inp.value; });
+      host.querySelectorAll('[data-opt-correct]').forEach(b => b.onclick = () => {
+        const i = Number(b.dataset.optCorrect);
+        if (multi) {
+          const set = new Set(Array.isArray(D.answer) ? D.answer.map(Number) : []);
+          set.has(i) ? set.delete(i) : set.add(i);
+          D.answer = [...set].sort((a, b2) => a - b2);
+        } else D.answer = i;
+        draw();
+      });
+      host.querySelectorAll('[data-opt-del]').forEach(b => b.onclick = () => {
+        const i = Number(b.dataset.optDel);
+        D.options.splice(i, 1);
+        const shift = idx => idx > i ? idx - 1 : idx;
+        D.answer = Array.isArray(D.answer) ? D.answer.filter(a => a !== i).map(shift) : (D.answer === i ? 0 : shift(D.answer));
+        draw();
+      });
+    };
+    draw();
+    fields.querySelector('[data-add-option]').onclick = () => { D.options.push(''); draw(); };
+  }
+
+  // Paired left/right rows instead of two textareas a teacher had to keep in
+  // sync line-by-line by hand — a single blank line in either one used to
+  // silently shift every pairing after it.
+  function wireMatchingAuthoring(type) {
+    if (type !== 'matching') return;
+    const seeded = q.type === type;
+    const left = seeded ? (q.data?.left || []) : [];
+    const right = seeded ? (q.data?.right || []) : [];
+    D.pairs = left.length ? left.map((l, i) => ({ left: l, right: right[i] || '' })) : [{ left: '', right: '' }, { left: '', right: '' }];
+
+    const draw = () => {
+      const host = fields.querySelector('#d_pairRows');
+      if (!host) return;
+      host.innerHTML = D.pairs.map((p, i) => `
+        <div class="row mb" style="align-items:center">
+          <input style="flex:1" placeholder="${t('build.left')}" value="${esc(p.left)}" data-pair-left="${i}">
+          <span class="muted">→</span>
+          <input style="flex:1" placeholder="${t('build.right')}" value="${esc(p.right)}" data-pair-right="${i}">
+          <button type="button" class="btn btn-sm btn-danger" data-pair-del="${i}" ${D.pairs.length <= 2 ? 'disabled' : ''}>✕</button>
+        </div>`).join('');
+      host.querySelectorAll('[data-pair-left]').forEach(inp => inp.oninput = () => { D.pairs[Number(inp.dataset.pairLeft)].left = inp.value; });
+      host.querySelectorAll('[data-pair-right]').forEach(inp => inp.oninput = () => { D.pairs[Number(inp.dataset.pairRight)].right = inp.value; });
+      host.querySelectorAll('[data-pair-del]').forEach(b => b.onclick = () => { D.pairs.splice(Number(b.dataset.pairDel), 1); draw(); });
+    };
+    draw();
+    fields.querySelector('[data-add-pair]').onclick = () => { D.pairs.push({ left: '', right: '' }); draw(); };
   }
 
   function wireImageAuthoring(type) {
@@ -751,10 +822,8 @@ function questionEditor(quizId, types, existing, done, groups) {
     let data = {};
     try {
       switch (type) {
-        case 'mcq_single':
-          data = { options: lines('#d_options'), answer: Number(g('#d_answer')) }; break;
-        case 'mcq_multiple':
-          data = { options: lines('#d_options'), answer: g('#d_answer').split(',').map(n => Number(n.trim())) }; break;
+        case 'mcq_single': case 'mcq_multiple':
+          data = { options: D.options, answer: D.answer }; break;
         case 'true_false':
           data = { answer: g('#d_answer') === 'true' }; break;
         case 'short_answer': case 'terminal':
@@ -772,7 +841,7 @@ function questionEditor(quizId, types, existing, done, groups) {
           data = { items: answer, answer }; break;
         }
         case 'matching': {
-          const left = lines('#d_left'), right = lines('#d_right');
+          const left = D.pairs.map(p => p.left), right = D.pairs.map(p => p.right);
           data = { left, right, answer: Object.fromEntries(left.map((l, i) => [l, right[i]])) }; break;
         }
         case 'categorize': {
@@ -963,21 +1032,27 @@ export async function flashcardsView(_p, out) {
     out.innerHTML = `
       <div class="between mb"><h1>${t('flash.title')}</h1>
         <span class="badge badge-primary">${due.length - i} ${t('flash.due')}</span></div>
-      <div class="card center" style="min-block-size:230px;display:grid;place-content:center">
-        <div style="font-size:1.35rem;font-weight:650">${esc(i18n.pick(card, 'prompt', card.prompt))}</div>
-        <div id="back" class="hidden mt muted">${esc(card.back || '')}</div>
+      <div class="flip-card flip-card-lg" id="flip" tabindex="0" role="button" aria-label="${esc(t('flash.showAnswer'))}">
+        <div class="flip-inner">
+          <div class="flip-front">
+            <div style="font-size:1.35rem;font-weight:650">${esc(i18n.pick(card, 'prompt', card.prompt))}</div>
+            <div class="muted small mt">${t('flash.showAnswer')}</div>
+          </div>
+          <div class="flip-back">${esc(card.back || '')}</div>
+        </div>
       </div>
-      <div class="center mt"><button class="btn btn-lg" id="flip">${t('flash.showAnswer')}</button></div>
       <div class="row mt hidden" id="conf" style="justify-content:center">
         ${[[0, 'flash.again'], [3, 'flash.hard'], [4, 'flash.good'], [5, 'flash.easy']].map(([c, k]) =>
           `<button class="btn" data-c="${c}">${t(k)}</button>`).join('')}
       </div>`;
 
-    out.querySelector('#flip').onclick = e => {
-      out.querySelector('#back').classList.remove('hidden');
+    const flipEl = out.querySelector('#flip');
+    const reveal = () => {
+      flipEl.classList.add('flipped');
       out.querySelector('#conf').classList.remove('hidden');
-      e.target.classList.add('hidden');
     };
+    flipEl.onclick = reveal;
+    flipEl.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); reveal(); } };
     out.querySelectorAll('[data-c]').forEach(b => b.onclick = async () => {
       await api.post(`/attempts/flashcards/${card.id}/review`, { confidence: Number(b.dataset.c) });
       i++;
