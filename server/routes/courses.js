@@ -268,7 +268,8 @@ router.post('/:id/assignments', requireAuth, (req, res) => {
   const assignment = db.assignments.insert({
     courseId: course.id, title: b.title || 'Assignment', brief: b.brief || '',
     dueAt: b.dueAt || null, points: Number(b.points) || 20,
-    allowFiles: b.allowFiles !== false, allowCode: !!b.allowCode
+    allowFiles: b.allowFiles !== false, allowCode: !!b.allowCode,
+    attachments: b.attachments || []
   });
   for (const userId of courseMemberIds(course)) {
     db.notifications.insert({

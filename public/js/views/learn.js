@@ -541,7 +541,8 @@ export async function courseView({ classId, id }, out) {
     tabEl.querySelector('#addLesson')?.addEventListener('click', () => lessonModal(id));
     tabEl.querySelector('#addQuiz')?.addEventListener('click', () => quizModal(id));
     tabEl.querySelector('#addAssign')?.addEventListener('click', () => assignmentModal(id));
-    tabEl.querySelectorAll('[data-submit-assign]').forEach(b => b.onclick = () => submitAssignment(b.dataset.submitAssign));
+    tabEl.querySelectorAll('[data-submit-assign]').forEach(b => b.onclick = () =>
+      submitAssignment(c.assignments.find(a => a.id === b.dataset.submitAssign)));
   }
 
   out.querySelector('#enroll')?.addEventListener('click', async () => {
@@ -710,40 +711,56 @@ export function quizModal(courseId) {
 }
 
 function assignmentModal(courseId) {
+  let attachments = [];
   modal(`
     <h2>${t('course.assignments')}</h2>
     <div class="field"><label>Title</label><input id="ti"></div>
     <div class="field"><label>Brief</label><textarea id="br"></textarea></div>
     <div class="row"><div class="field"><label>Due</label><input id="du" type="date"></div>
       <div class="field"><label>${t('common.points')}</label><input id="pt" type="number" value="20"></div></div>
+    <div class="field"><label>${t('lesson.attachments')}</label><div id="attHost"></div></div>
     <button class="btn btn-primary" id="sv">${t('common.create')}</button>`,
-    { onMount: (root, close) => root.querySelector('#sv').onclick = async () => {
-        await api.post(`/courses/${courseId}/assignments`, {
-          title: root.querySelector('#ti').value,
-          brief: root.querySelector('#br').value,
-          dueAt: root.querySelector('#du').value || null,
-          points: Number(root.querySelector('#pt').value)
-        });
-        close(); router.resolve();
+    { onMount: (root, close) => {
+        attachmentsEditor(root.querySelector('#attHost'), [], list => { attachments = list; });
+        root.querySelector('#sv').onclick = async () => {
+          await api.post(`/courses/${courseId}/assignments`, {
+            title: root.querySelector('#ti').value,
+            brief: root.querySelector('#br').value,
+            dueAt: root.querySelector('#du').value || null,
+            points: Number(root.querySelector('#pt').value),
+            attachments
+          });
+          close(); router.resolve();
+        };
       } });
 }
 
-function submitAssignment(assignmentId) {
+function submitAssignment(assignment) {
+  let files = [];
   modal(`
-    <h2>${t('common.submit')}</h2>
+    <h2>${esc(assignment.title)}</h2>
+    ${assignment.brief ? `<p class="muted small">${esc(assignment.brief)}</p>` : ''}
+    ${assignment.attachments?.length ? `
+      <div class="card mb" style="background:var(--surface-2)">
+        <div class="stack">${assignment.attachments.map(f => `
+          <a class="row between" style="padding:.2rem 0" href="${esc(f.url)}" target="_blank" rel="noopener">
+            <span>${attIcon(f.name)} ${esc(f.name)}</span><span class="tiny muted">${fmtBytes(f.size)}</span>
+          </a>`).join('')}</div>
+      </div>` : ''}
     <div class="field"><label>Text</label><textarea id="tx"></textarea></div>
     <div class="field"><label>Code</label><textarea id="cd" class="code-editor"></textarea></div>
-    <div class="field"><label>File</label><input id="fi" type="file"></div>
+    <div class="field"><label>${t('lesson.attachments')}</label><div id="attHost"></div></div>
     <button class="btn btn-primary" id="sv">${t('common.submit')}</button>`,
-    { onMount: (root, close) => root.querySelector('#sv').onclick = async () => {
-        const files = [];
-        const f = root.querySelector('#fi').files[0];
-        if (f) files.push(await api.upload(f));
-        await api.post(`/courses/assignments/${assignmentId}/submit`, {
-          text: root.querySelector('#tx').value, code: root.querySelector('#cd').value, files
-        });
-        close();
-        toast('✅ ' + t('common.submit'), 'success');
+    { onMount: (root, close) => {
+        attachmentsEditor(root.querySelector('#attHost'), [], list => { files = list; });
+        root.querySelector('#sv').onclick = async () => {
+          await api.post(`/courses/assignments/${assignment.id}/submit`, {
+            text: root.querySelector('#tx').value, code: root.querySelector('#cd').value, files
+          });
+          close();
+          toast('✅ ' + t('common.submit'), 'success');
+          router.resolve();
+        };
       } });
 }
 
@@ -802,6 +819,19 @@ export async function lessonView({ classId, id, lessonId }, out) {
 
 /** Teacher grading page for one assignment: the whole class roster, each row
  *  showing what the student turned in (or didn't) with a grade + feedback box. */
+/** The reference files a teacher attached to the assignment brief itself —
+ *  distinct from what's rendered further down for a student's submission. */
+const assignmentAttachments = a => a.attachments?.length ? `
+  <div class="card mb" style="background:var(--surface-2)">
+    <div class="stack">${a.attachments.map(f => `
+      <a class="row between" style="padding:.2rem 0" href="${esc(f.url)}" target="_blank" rel="noopener">
+        <span>${attIcon(f.name)} ${esc(f.name)}</span><span class="tiny muted">${fmtBytes(f.size)}</span>
+      </a>`).join('')}</div>
+  </div>` : '';
+
+const submissionFiles = s => s.files?.length ? `<div class="row mb">${s.files.map(f =>
+  `<a class="btn btn-sm" href="${esc(f.url)}" target="_blank" rel="noopener">📎 ${esc(f.name || t('assignment.files'))}</a>`).join('')}</div>` : '';
+
 export async function assignmentGradeView({ id }, out) {
   const data = await api.get(`/courses/assignments/${id}`);
   const a = data.assignment;
@@ -813,6 +843,7 @@ export async function assignmentGradeView({ id }, out) {
       <a href="/classes/${a.course.classId}/courses/${a.course.id}" class="small">← ${esc(a.course.title)}</a>
       <h1 class="mt">${esc(a.title)}</h1>
       <p class="muted">${esc(a.brief || '')}</p>
+      ${assignmentAttachments(a)}
       ${s ? `
         <div class="card mt">
           <div class="between mb">
@@ -822,6 +853,7 @@ export async function assignmentGradeView({ id }, out) {
           </div>
           ${s.text ? `<div class="card small" style="white-space:pre-wrap;background:var(--surface-2)">${esc(s.text)}</div>` : ''}
           ${s.code ? `<pre class="mt">${esc(s.code)}</pre>` : ''}
+          ${submissionFiles(s)}
           ${s.grade != null ? `<div class="mt"><strong>${t('assignment.grade')}:</strong> ${s.grade}/${a.points}</div>` : ''}
           ${s.feedback ? `<div class="card mt small" style="background:var(--surface-2)">${esc(s.feedback)}</div>` : ''}
         </div>` : `<div class="empty-state mt">${t('assignment.notSubmitted')}</div>`}`;
@@ -841,6 +873,7 @@ export async function assignmentGradeView({ id }, out) {
         <span class="tiny muted">${a.points} ${t('common.points')}</span>
       </div>
     </div>
+    ${assignmentAttachments(a)}
     <div class="stack">${rows.map(({ student, submission: s }) => `
       <div class="card">
         <div class="between mb">
@@ -856,8 +889,7 @@ export async function assignmentGradeView({ id }, out) {
         ${s ? `
           ${s.text ? `<div class="card small mb" style="white-space:pre-wrap;background:var(--surface-2)">${esc(s.text)}</div>` : ''}
           ${s.code ? `<pre class="mb">${esc(s.code)}</pre>` : ''}
-          ${s.files?.length ? `<div class="row mb">${s.files.map(f =>
-            `<a class="btn btn-sm" href="${esc(f.url)}" target="_blank" rel="noopener">📎 ${esc(f.name || t('assignment.files'))}</a>`).join('')}</div>` : ''}
+          ${submissionFiles(s)}
           <div class="row">
             <input type="number" min="0" max="${a.points}" placeholder="0-${a.points}"
                    value="${s.grade ?? ''}" data-grade-input="${s.id}" style="inline-size:110px">
