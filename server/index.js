@@ -135,6 +135,27 @@ const sendShell = (_req, res) => {
   res.type('html').send(indexShell);
 };
 
+// The same staleness BUILD_ID was introduced for above bites every OTHER
+// script too: app.js statically imports the view modules, which import
+// core.js, which import each other, all by plain relative specifiers with
+// no query string of their own — hcdn can keep serving any one of them from
+// a stale edge indefinitely, deploy after deploy, independent of app.js
+// itself being fresh. Rewriting every relative `.js` import/dynamic-import
+// specifier to carry the same `?v=` on the way out closes that gap the
+// exact same way, for every module instead of just the entry point.
+const JS_IMPORT_RE = /((?:from|import\()\s*['"])(\.[^'"]+?\.js)(['"])/g;
+const versionImports = src => src.replace(JS_IMPORT_RE, (_m, pre, spec, post) => `${pre}${spec}?v=${BUILD_ID}${post}`);
+
+app.get(/^\/js\/.+\.js$/, (req, res) => {
+  const filePath = path.join(PUBLIC, decodeURIComponent(req.path));
+  if (!filePath.startsWith(PUBLIC)) return res.status(400).end();
+  fs.readFile(filePath, 'utf8', (err, src) => {
+    if (err) return res.status(404).end();
+    res.setHeader('Cache-Control', 'no-cache');
+    res.type('application/javascript').send(versionImports(src));
+  });
+});
+
 app.use(express.static(PUBLIC, {
   extensions: ['html'],
   index: false,   // '/' is handled by sendShell below, not by serving the file as-is
